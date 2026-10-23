@@ -124,6 +124,40 @@ internal static class ModelLibraryScanner
         return header.Replace("&", "&&", StringComparison.Ordinal);
     }
 
+    public static LibraryFile? SelectDefault(IReadOnlyList<LibraryFile> files)
+    {
+        if (files.Count == 0)
+        {
+            return null;
+        }
+
+        var firstFolder = DirectoryOf(files[0].DisplayName);
+        for (var index = 1; index < files.Count; index++)
+        {
+            var folder = DirectoryOf(files[index].DisplayName);
+            if (string.Compare(folder, firstFolder, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                firstFolder = folder;
+            }
+        }
+
+        LibraryFile? selected = null;
+        foreach (var file in files)
+        {
+            if (!string.Equals(DirectoryOf(file.DisplayName), firstFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (selected is null || CompareDefaultName(file, selected) < 0)
+            {
+                selected = file;
+            }
+        }
+
+        return selected;
+    }
+
     private static void WriteReadmeIfMissing(string directory, string readme)
     {
         Directory.CreateDirectory(directory);
@@ -196,6 +230,19 @@ internal static class ModelLibraryScanner
             Path.GetFileName(left.DisplayName),
             Path.GetFileName(right.DisplayName),
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int CompareDefaultName(LibraryFile left, LibraryFile right)
+    {
+        var leftName = Path.GetFileNameWithoutExtension(left.DisplayName);
+        var rightName = Path.GetFileNameWithoutExtension(right.DisplayName);
+        var length = leftName.Length.CompareTo(rightName.Length);
+        if (length != 0)
+        {
+            return length;
+        }
+
+        return string.Compare(leftName, rightName, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string DirectoryOf(string displayName)

@@ -2970,7 +2970,11 @@ public partial class MainWindow : Window
             return false;
         }
 
-        var model = library.Models[0];
+        var model = ModelLibraryScanner.SelectDefault(library.Models);
+        if (model is null)
+        {
+            return false;
+        }
         Trace($"startup-plan:library-model:{model.FullPath}");
         try
         {
@@ -2986,9 +2990,9 @@ public partial class MainWindow : Window
             return false;
         }
 
-        if (library.Motions.Count >= 1)
+        var motion = ModelLibraryScanner.SelectDefault(library.Motions);
+        if (motion is not null)
         {
-            var motion = library.Motions[0];
             Trace($"startup-plan:library-motion:{motion.FullPath}");
             try
             {

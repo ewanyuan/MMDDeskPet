@@ -258,6 +258,92 @@ public class RuntimeBehaviorTests
     }
 
     [Fact]
+    public void DefaultPickIsTheShortestNameInTheFirstFolder()
+    {
+        var models = new LibraryFile[]
+        {
+            Named("Zzz/a.pmx"),
+            Named("Hime_260426/Hime.physics-max.pmx"),
+            Named("Hime_260426/Hime.pmx"),
+            Named("Hime_260426/Hime.physics-stable.pmx"),
+            Named("Hime_260426/Hime.physics-balanced.pmx"),
+        };
+        Assert.Equal("Hime_260426/Hime.pmx", ModelLibraryScanner.SelectDefault(models)!.DisplayName);
+
+        var sameLength = new LibraryFile[]
+        {
+            Named("pack/cat.pmx"),
+            Named("pack/cab.pmx"),
+            Named("pack/bat.pmx"),
+        };
+        Assert.Equal("pack/bat.pmx", ModelLibraryScanner.SelectDefault(sameLength)!.DisplayName);
+
+        var motions = new LibraryFile[]
+        {
+            Named("zzz/a.vmd"),
+            Named("waist-dance/waist-dance-camera.vmd"),
+            Named("waist-dance/waist-dance.vmd"),
+        };
+        Assert.Equal("waist-dance/waist-dance.vmd", ModelLibraryScanner.SelectDefault(motions)!.DisplayName);
+        Assert.Null(ModelLibraryScanner.SelectDefault([]));
+
+        var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-lib-default-" + Guid.NewGuid().ToString("N"));
+        var hime = Path.Combine(root, "models", "Hime_260426");
+        var later = Path.Combine(root, "models", "Zzz");
+        var dance = Path.Combine(root, "motions", "waist-dance");
+        var otherMotion = Path.Combine(root, "motions", "zzz");
+        Directory.CreateDirectory(hime);
+        Directory.CreateDirectory(later);
+        Directory.CreateDirectory(dance);
+        Directory.CreateDirectory(otherMotion);
+        foreach (var name in new[] { "Hime.physics-balanced.pmx", "Hime.physics-max.pmx", "Hime.physics-stable.pmx", "Hime.pmx" })
+        {
+            File.WriteAllBytes(Path.Combine(hime, name), [1]);
+        }
+
+        File.WriteAllBytes(Path.Combine(later, "a.pmx"), [1]);
+        File.WriteAllBytes(Path.Combine(dance, "waist-dance-camera.vmd"), [1]);
+        File.WriteAllBytes(Path.Combine(dance, "waist-dance.vmd"), [1]);
+        File.WriteAllBytes(Path.Combine(otherMotion, "a.vmd"), [1]);
+
+        try
+        {
+            var library = ModelLibraryScanner.Scan(root);
+            Assert.Equal(
+            [
+                "Hime_260426/Hime.physics-balanced.pmx",
+                "Hime_260426/Hime.physics-max.pmx",
+                "Hime_260426/Hime.physics-stable.pmx",
+                "Hime_260426/Hime.pmx",
+                "Zzz/a.pmx",
+            ],
+            library.Models.Select(file => file.DisplayName).ToArray());
+            Assert.Equal(
+            [
+                "waist-dance/waist-dance-camera.vmd",
+                "waist-dance/waist-dance.vmd",
+                "zzz/a.vmd",
+            ],
+            library.Motions.Select(file => file.DisplayName).ToArray());
+            Assert.Equal("Hime_260426/Hime.pmx", ModelLibraryScanner.SelectDefault(library.Models)!.DisplayName);
+            Assert.Equal("waist-dance/waist-dance.vmd", ModelLibraryScanner.SelectDefault(library.Motions)!.DisplayName);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static LibraryFile Named(string displayName)
+    {
+        return new LibraryFile
+        {
+            FullPath = displayName,
+            DisplayName = displayName,
+        };
+    }
+
+    [Fact]
     public void LibraryFoldersAreCreatedOnceAndBlankRootMeansTheExeFolder()
     {
         var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-lib-empty-" + Guid.NewGuid().ToString("N"));

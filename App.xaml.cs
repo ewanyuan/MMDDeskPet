@@ -115,10 +115,11 @@ public partial class App : System.Windows.Application
                         }
                         else
                         {
-                            chosenModel = library.Models[0].FullPath;
-                            if (string.IsNullOrWhiteSpace(chosenMotion) && library.Motions.Count > 0)
+                            chosenModel = ModelLibraryScanner.SelectDefault(library.Models)!.FullPath;
+                            var motion = ModelLibraryScanner.SelectDefault(library.Motions);
+                            if (string.IsNullOrWhiteSpace(chosenMotion) && motion is not null)
                             {
-                                chosenMotion = library.Motions[0].FullPath;
+                                chosenMotion = motion.FullPath;
                             }
                         }
                     }
