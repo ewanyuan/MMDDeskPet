@@ -5,9 +5,9 @@ namespace MMDDeskPet;
 
 /// <summary>
 /// Builds the https://pet.local URLs the page is allowed to fetch.
-/// External models stay on that same host under /ext/&lt;token&gt;/. A second
-/// host such as ext0.local is a different origin, and WebView2 folder mappings
-/// do not send Access-Control-Allow-Origin, so the page XHR fails with status 0.
+/// The app files and external models share that host. WebView2's folder
+/// mapping serves the host itself and does not raise WebResourceRequested,
+/// so the host process streams every response instead of mapping a folder.
 /// </summary>
 internal static class RuntimeAssetUrls
 {
@@ -61,6 +61,56 @@ internal static class RuntimeAssetUrls
 
         relativePath = string.Join('/', segments.Where(segment => segment != "."));
         return relativePath.Length > 0;
+    }
+
+    internal static bool TryReadAppRelative(string absolutePath, out string relativePath)
+    {
+        relativePath = string.Empty;
+        var decoded = Uri.UnescapeDataString(absolutePath.Replace('\\', '/'));
+        if (decoded.StartsWith('/'))
+        {
+            decoded = decoded[1..];
+        }
+
+        if (decoded.StartsWith("ext/", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var segments = decoded.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0 || segments.Any(segment => segment == ".."))
+        {
+            return false;
+        }
+
+        relativePath = string.Join('/', segments.Where(segment => segment != "."));
+        return relativePath.Length > 0;
+    }
+
+    internal static string ContentTypeFor(string path)
+    {
+        return Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".html" or ".htm" => "text/html",
+            ".js" => "text/javascript",
+            ".css" => "text/css",
+            ".json" or ".map" => "application/json",
+            ".wasm" => "application/wasm",
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".bmp" => "image/bmp",
+            ".gif" => "image/gif",
+            ".tga" => "image/x-tga",
+            ".dds" or ".spa" or ".sph" or ".pmx" or ".pmd" or ".vmd" or ".vpd" => "application/octet-stream",
+            ".wav" => "audio/wav",
+            ".mp3" => "audio/mpeg",
+            ".ogg" => "audio/ogg",
+            ".m4a" => "audio/mp4",
+            ".aac" => "audio/aac",
+            ".flac" => "audio/flac",
+            ".mp4" => "video/mp4",
+            _ => "application/octet-stream",
+        };
     }
 
     private static string Build(string relativePath)

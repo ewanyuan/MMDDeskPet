@@ -169,6 +169,69 @@ public class RuntimeBehaviorTests
         Assert.Contains("--exit-after", badSeconds, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AppAndExternalPathsStayDistinct()
+    {
+        Assert.True(RuntimeAssetUrls.TryReadAppRelative("/web/index.html", out var index));
+        Assert.Equal("web/index.html", index);
+        Assert.True(RuntimeAssetUrls.TryReadAppRelative("/web/mmd-spr.wasm", out var wasm));
+        Assert.Equal("web/mmd-spr.wasm", wasm);
+        Assert.False(RuntimeAssetUrls.TryReadAppRelative("/ext/0/Hime.pmx", out _));
+        Assert.False(RuntimeAssetUrls.TryReadAppRelative("/web/../../secret.txt", out _));
+        Assert.Equal("application/wasm", RuntimeAssetUrls.ContentTypeFor("mmd-spr.wasm"));
+        Assert.Equal("text/javascript", RuntimeAssetUrls.ContentTypeFor("mmd.bundle.js"));
+        Assert.Equal("text/html", RuntimeAssetUrls.ContentTypeFor("index.html"));
+        Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("Hime.pmx"));
+        Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("wave.vmd"));
+        Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("cloth.spa"));
+        Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("cloth.sph"));
+        Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("skin.dds"));
+        Assert.Equal("image/x-tga", RuntimeAssetUrls.ContentTypeFor("skin.tga"));
+        Assert.Equal("image/png", RuntimeAssetUrls.ContentTypeFor("skin.png"));
+        Assert.Equal("image/jpeg", RuntimeAssetUrls.ContentTypeFor("skin.jpg"));
+        Assert.Equal("image/bmp", RuntimeAssetUrls.ContentTypeFor("skin.bmp"));
+        Assert.Equal("audio/mpeg", RuntimeAssetUrls.ContentTypeFor("song.mp3"));
+        Assert.Equal("audio/wav", RuntimeAssetUrls.ContentTypeFor("song.wav"));
+        Assert.Equal("audio/ogg", RuntimeAssetUrls.ContentTypeFor("song.ogg"));
+        Assert.Equal("application/json", RuntimeAssetUrls.ContentTypeFor("settings.json"));
+    }
+
+    [Fact]
+    public void LargeModelStaysAFileStream()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-large-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var model = Path.Combine(root, "Hime.pmx");
+        const long size = 20L * 1024 * 1024;
+        using (var created = new FileStream(model, FileMode.Create, FileAccess.Write, FileShare.Read))
+        {
+            created.SetLength(size);
+        }
+
+        try
+        {
+            var map = new ExternalFileMap();
+            var url = map.UrlForFile(model, out var token, out _);
+            Assert.Equal("0", token);
+            Assert.Equal("https://pet.local/ext/0/Hime.pmx", url);
+            Assert.True(map.TryResolve(new Uri(url).AbsolutePath, out var resolved));
+            using var stream = new FileStream(
+                resolved,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                64 * 1024,
+                FileOptions.SequentialScan);
+            Assert.Equal(size, stream.Length);
+            Assert.Equal(0, stream.Position);
+            Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor(resolved));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static void AssertRoundTrip(string url, string token, string relativePath)
     {
         var uri = new Uri(url);

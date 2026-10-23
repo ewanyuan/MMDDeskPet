@@ -650,18 +650,36 @@ public partial class MainWindow : Window
             core.ProcessFailed += OnProcessFailed;
             core.Settings.AreDefaultContextMenusEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
-            core.SetVirtualHostNameToFolderMapping(
-                AppVirtualHost,
-                _repositoryRoot,
-                CoreWebView2HostResourceAccessKind.Allow);
-            Trace($"virtual-host:{AppVirtualHost}->{_repositoryRoot}");
-            var externalFilter = $"https://{AppVirtualHost}/ext/*";
-            core.AddWebResourceRequestedFilter(
-                externalFilter,
-                CoreWebView2WebResourceContext.All,
-                CoreWebView2WebResourceRequestSourceKinds.All);
-            core.WebResourceRequested += OnExternalWebResourceRequested;
-            Trace($"virtual-host-filter:{externalFilter}");
+            // Folder mapping answers pet.local itself and never raises
+            // WebResourceRequested, which is why /ext/ requests died with status 0
+            // and no handler log. Every response is streamed by the handler below.
+            Trace($"virtual-host-mapping:none:{_repositoryRoot}");
+            var resourceFilter = $"https://{AppVirtualHost}/*";
+            var sourceKinds = false;
+            try
+            {
+                core.AddWebResourceRequestedFilter(
+                    resourceFilter,
+                    CoreWebView2WebResourceContext.All,
+                    CoreWebView2WebResourceRequestSourceKinds.All);
+                sourceKinds = true;
+            }
+            catch (MissingMethodException exception)
+            {
+                Trace($"resource-filter-fallback:{exception.GetType().Name}:{exception.Message}");
+            }
+            catch (EntryPointNotFoundException exception)
+            {
+                Trace($"resource-filter-fallback:{exception.GetType().Name}:{exception.Message}");
+            }
+
+            if (!sourceKinds)
+            {
+                core.AddWebResourceRequestedFilter(resourceFilter, CoreWebView2WebResourceContext.All);
+            }
+
+            core.WebResourceRequested += OnPetHostWebResourceRequested;
+            Trace($"resource-filter:{resourceFilter}:source-kinds={(sourceKinds ? "all" : "legacy")}");
             Browser.AllowExternalDrop = false;
             _navigationStarted = true;
             Trace("before-navigate");
@@ -2034,51 +2052,60 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnExternalWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    private void OnPetHostWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
     {
+        // Log before any other work. The previous handler returned with no
+        // trace when the folder mapping swallowed the request.
+        var requestUri = e.Request?.Uri ?? string.Empty;
+        Trace($"resource-enter:{Truncate(requestUri, 500)}");
         CoreWebView2? core = null;
         try
         {
-            core = Browser.CoreWebView2;
-            if (core is null || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri))
+            core = sender as CoreWebView2 ?? Browser.CoreWebView2;
+            if (core is null)
             {
+                Trace("resource-fault:webview-missing");
                 return;
             }
 
-            if (!uri.Host.Equals(AppVirtualHost, StringComparison.OrdinalIgnoreCase))
+            if (!Uri.TryCreate(requestUri, UriKind.Absolute, out var uri)
+                || !uri.Host.Equals(AppVirtualHost, StringComparison.OrdinalIgnoreCase))
             {
+                Trace($"resource-ignore:{Truncate(requestUri, 300)}");
                 return;
             }
 
-            string filePath;
+            string? filePath;
             lock (_requestLock)
             {
-                if (!_externalFiles.TryResolve(uri.AbsolutePath, out filePath))
-                {
-                    Trace($"external-reject:{Truncate(uri.AbsolutePath, 300)}");
-                    e.Response = AssetResponse(core, new MemoryStream(), 404, "Not Found", "text/plain");
-                    return;
-                }
+                filePath = ResolvePetHostFile(uri.AbsolutePath);
             }
 
-            if (!File.Exists(filePath))
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
             {
-                Trace($"external-miss:{Truncate(uri.AbsolutePath, 300)}");
+                Trace($"resource-status:404:0:{Truncate(requestUri, 300)}:resolved={filePath}");
                 e.Response = AssetResponse(core, new MemoryStream(), 404, "Not Found", "text/plain");
                 return;
             }
 
+            // Stay on this handler thread. A deferral that completes on a
+            // background thread makes CreateWebResourceResponse fail and the
+            // XHR reports status 0. WebView2 reads the stream after we return
+            // and closes it, so the stream must stay open and must not be copied.
             var stream = new FileStream(
                 filePath,
                 FileMode.Open,
                 FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-            Trace($"external-serve:{Truncate(uri.AbsolutePath, 300)}:{stream.Length}");
-            e.Response = AssetResponse(core, stream, 200, "OK", ContentTypeFor(filePath));
+                FileShare.ReadWrite | FileShare.Delete,
+                64 * 1024,
+                FileOptions.SequentialScan);
+            var contentType = RuntimeAssetUrls.ContentTypeFor(filePath);
+            Trace($"resource-status:200:{stream.Length}:{contentType}:{filePath}");
+            e.Response = AssetResponse(core, stream, 200, "OK", contentType);
         }
         catch (Exception exception)
         {
-            Trace($"external-fault:{exception.GetBaseException().Message}");
+            Trace($"resource-fault:{exception.GetBaseException().Message}");
             if (core is not null)
             {
                 try
@@ -2087,10 +2114,28 @@ public partial class MainWindow : Window
                 }
                 catch (Exception responseException)
                 {
-                    Trace($"external-fault-response:{responseException.GetBaseException().Message}");
+                    Trace($"resource-fault-response:{responseException.GetBaseException().Message}");
                 }
             }
         }
+    }
+
+    private string? ResolvePetHostFile(string absolutePath)
+    {
+        if (RuntimeAssetUrls.TryReadExternal(absolutePath, out _, out _))
+        {
+            return _externalFiles.TryResolve(absolutePath, out var externalPath) ? externalPath : null;
+        }
+
+        if (!RuntimeAssetUrls.TryReadAppRelative(absolutePath, out var relative))
+        {
+            return null;
+        }
+
+        var combined = Path.GetFullPath(Path.Combine(
+            _repositoryRoot,
+            relative.Replace('/', Path.DirectorySeparatorChar)));
+        return ExternalFileMap.IsInsideDirectory(_repositoryRoot, combined) ? combined : null;
     }
 
     private static CoreWebView2WebResourceResponse AssetResponse(
@@ -2102,30 +2147,6 @@ public partial class MainWindow : Window
     {
         var headers = $"Content-Type: {contentType}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\n";
         return core.Environment.CreateWebResourceResponse(content, status, reason, headers);
-    }
-
-    private static string ContentTypeFor(string path)
-    {
-        return Path.GetExtension(path).ToLowerInvariant() switch
-        {
-            ".png" => "image/png",
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".bmp" => "image/bmp",
-            ".gif" => "image/gif",
-            ".tga" => "image/x-tga",
-            ".wav" => "audio/wav",
-            ".mp3" => "audio/mpeg",
-            ".ogg" => "audio/ogg",
-            ".m4a" => "audio/mp4",
-            ".aac" => "audio/aac",
-            ".flac" => "audio/flac",
-            ".mp4" => "video/mp4",
-            ".wasm" => "application/wasm",
-            ".js" => "text/javascript",
-            ".html" => "text/html",
-            ".css" => "text/css",
-            _ => "application/octet-stream",
-        };
     }
 
     private string ToRuntimeUrl(string absolutePath)
