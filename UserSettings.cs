@@ -17,6 +17,8 @@ internal sealed class UserSettings
 
     public string? LastMusicPath { get; set; }
 
+    public string? LibraryFolder { get; set; }
+
     public bool AdultContentEnabled { get; set; }
 }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -7,6 +8,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using Microsoft.Web.WebView2.Core;
 
@@ -40,6 +42,14 @@ public partial class MainWindow : Window
     private readonly MenuItem _recentModelsMenu = new();
     private readonly MenuItem _recentMotionsMenu = new();
     private readonly MenuItem _recentMusicMenu = new();
+    private readonly MenuItem _libraryModelsMenu = new();
+    private readonly MenuItem _libraryMotionsMenu = new();
+    private readonly MenuItem _libraryMusicMenu = new();
+    private readonly MenuItem _openLibraryFolderMenu = new();
+    private readonly MenuItem _rescanLibraryMenu = new();
+    private readonly List<FileSystemWatcher> _libraryWatchers = [];
+    private DispatcherTimer? _libraryRefreshTimer;
+    private ModelLibrary _library = ModelLibrary.Empty;
     private readonly MenuItem _switchCharacterMenu = new();
     private readonly MenuItem _danceMenu = new();
     private readonly MenuItem _builtInDanceMenu = new();
@@ -392,12 +402,21 @@ public partial class MainWindow : Window
         _english = !IsChineseSystemLanguage();
         _settings = UserSettingsStore.Load();
         _adultContentEnabled = _settings.AdultContentEnabled;
+        try
+        {
+            ModelLibraryScanner.EnsureFolders(CurrentLibraryRoot());
+        }
+        catch (Exception exception)
+        {
+            Trace($"library-folders:{exception.GetBaseException().Message}");
+        }
 
         InitializeComponent();
         Title = "MMD Desk Pet";
         Topmost = true;
         Browser.AllowExternalDrop = false;
         BuildBaseContextMenu();
+        StartLibraryWatch();
         Browser.DefaultBackgroundColor = System.Drawing.Color.FromArgb(0, 0, 0, 0);
         Loaded += OnLoaded;
     }
@@ -500,33 +519,46 @@ public partial class MainWindow : Window
             {
                 throw new FileNotFoundException("The PMX model was not found.", _launch.ModelPath);
             }
-            else if (StartupModelPolicy.ShouldRestoreLastModel(_settings.LastModelPath, IsExistingFile))
-            {
-                Trace("startup-plan:restore-last-model");
-                try
-                {
-                    await LoadModelFileAsync(_settings.LastModelPath!, recordRecent: false);
-                    loaded = true;
-                    if (IsExistingFile(_settings.LastMotionPath))
-                    {
-                        try
-                        {
-                            await LoadMotionFileAsync(_settings.LastMotionPath!, recordRecent: false);
-                        }
-                        catch (Exception motionError)
-                        {
-                            Trace($"startup-motion-skipped:{motionError.Message}");
-                        }
-                    }
-                }
-                catch (Exception modelError)
-                {
-                    Trace($"startup-model-skipped:{modelError.GetBaseException().Message}");
-                }
-            }
             else
             {
-                Trace("startup-plan:empty");
+                if (StartupModelPolicy.ShouldRestoreLastModel(_settings.LastModelPath, IsExistingFile))
+                {
+                    Trace("startup-plan:restore-last-model");
+                    try
+                    {
+                        await LoadModelFileAsync(_settings.LastModelPath!, recordRecent: false);
+                        loaded = true;
+                        if (IsExistingFile(_settings.LastMotionPath))
+                        {
+                            try
+                            {
+                                await LoadMotionFileAsync(_settings.LastMotionPath!, recordRecent: false);
+                            }
+                            catch (Exception motionError)
+                            {
+                                Trace($"startup-motion-skipped:{motionError.Message}");
+                            }
+                        }
+                    }
+                    catch (Exception modelError) when (IsSuperseded(modelError))
+                    {
+                        throw;
+                    }
+                    catch (Exception modelError)
+                    {
+                        Trace($"startup-model-skipped:{modelError.GetBaseException().Message}");
+                    }
+                }
+
+                if (!loaded)
+                {
+                    loaded = await TryLoadFirstLibraryModelAsync();
+                }
+
+                if (!loaded)
+                {
+                    Trace("startup-plan:empty");
+                }
             }
 
             if (!StartupModelPolicy.ShouldAutoLoadBundledModel && !loaded)
@@ -1276,6 +1308,14 @@ public partial class MainWindow : Window
         ConfigureOpenMenu(_openModelMenu, Text("打开模型…", "Open model…"), OnOpenModelMenuClick);
         ConfigureOpenMenu(_openMotionMenu, Text("打开动作…", "Open motion…"), OnOpenMotionMenuClick);
         ConfigureOpenMenu(_openMusicMenu, Text("打开音乐…", "Open music…"), OnOpenMusicMenuClick);
+        _libraryModelsMenu.Header = Text("模型", "Models");
+        _libraryMotionsMenu.Header = Text("动作", "Motions");
+        _libraryMusicMenu.Header = Text("音乐", "Music");
+        ConfigureMenuItem(_libraryModelsMenu);
+        ConfigureMenuItem(_libraryMotionsMenu);
+        ConfigureMenuItem(_libraryMusicMenu);
+        ConfigureOpenMenu(_openLibraryFolderMenu, Text("打开模型文件夹", "Open models folder"), OnOpenLibraryFolderClick);
+        ConfigureOpenMenu(_rescanLibraryMenu, Text("重新扫描", "Rescan"), OnRescanLibraryClick);
         ConfigureRecentMenu(_recentModelsMenu, Text("最近的模型", "Recent models"));
         ConfigureRecentMenu(_recentMotionsMenu, Text("最近的动作", "Recent motions"));
         ConfigureRecentMenu(_recentMusicMenu, Text("最近的音乐", "Recent music"));
@@ -1361,11 +1401,16 @@ public partial class MainWindow : Window
         _closeMenu.Click += OnCloseMenuClick;
 
         _petMenu.Items.Add(_openModelMenu);
+        _petMenu.Items.Add(_libraryModelsMenu);
         _petMenu.Items.Add(_openMotionMenu);
+        _petMenu.Items.Add(_libraryMotionsMenu);
         _petMenu.Items.Add(_openMusicMenu);
+        _petMenu.Items.Add(_libraryMusicMenu);
         _petMenu.Items.Add(_recentModelsMenu);
         _petMenu.Items.Add(_recentMotionsMenu);
         _petMenu.Items.Add(_recentMusicMenu);
+        _petMenu.Items.Add(_openLibraryFolderMenu);
+        _petMenu.Items.Add(_rescanLibraryMenu);
         _petMenu.Items.Add(new Separator());
         _petMenu.Items.Add(_switchCharacterMenu);
         _petMenu.Items.Add(_danceMenu);
@@ -2044,6 +2089,7 @@ public partial class MainWindow : Window
     {
         Trace("closed");
         _closing = true;
+        StopLibraryWatch();
         CancelPendingRequests("window-closed");
         _petMenu.IsOpen = false;
         if (Browser is IDisposable disposable)
@@ -2697,7 +2743,9 @@ public partial class MainWindow : Window
 
     private void ShowEmptyHint()
     {
-        EmptyHintText.Text = Text("拖入 PMX 开始", "Drop a PMX file to start");
+        EmptyHintText.Text = Text(
+            "拖入 PMX，或放进 models 文件夹",
+            "Drop a PMX, or put it in the models folder");
         EmptyHint.Visibility = Visibility.Visible;
     }
 
@@ -2718,6 +2766,300 @@ public partial class MainWindow : Window
         item.Header = header;
         ConfigureMenuItem(item);
         item.Visibility = Visibility.Collapsed;
+    }
+
+    private string CurrentLibraryRoot()
+    {
+        var configured = !string.IsNullOrWhiteSpace(_launch.LibraryFolder)
+            ? _launch.LibraryFolder
+            : _settings.LibraryFolder;
+        return ModelLibraryScanner.ResolveRoot(configured, ModelLibraryScanner.ExeDirectory());
+    }
+
+    private void StartLibraryWatch()
+    {
+        StopLibraryWatch();
+        string root;
+        try
+        {
+            root = CurrentLibraryRoot();
+            ModelLibraryScanner.EnsureFolders(root);
+        }
+        catch (Exception exception)
+        {
+            Trace($"library-folders:{exception.GetBaseException().Message}");
+            RefreshLibraryMenus();
+            return;
+        }
+
+        Trace($"library-root:{root}");
+        foreach (var folder in ModelLibraryScanner.LibraryDirectories(root))
+        {
+            try
+            {
+                var watcher = new FileSystemWatcher(folder)
+                {
+                    IncludeSubdirectories = true,
+                    NotifyFilter = NotifyFilters.FileName
+                        | NotifyFilters.DirectoryName
+                        | NotifyFilters.LastWrite
+                        | NotifyFilters.Size,
+                    EnableRaisingEvents = true,
+                };
+                watcher.Created += OnLibraryChanged;
+                watcher.Deleted += OnLibraryChanged;
+                watcher.Changed += OnLibraryChanged;
+                watcher.Renamed += OnLibraryChanged;
+                watcher.Error += OnLibraryWatcherError;
+                _libraryWatchers.Add(watcher);
+            }
+            catch (Exception exception)
+            {
+                Trace($"library-watch:{exception.GetBaseException().Message}");
+            }
+        }
+
+        RefreshLibraryMenus();
+    }
+
+    private void StopLibraryWatch()
+    {
+        if (_libraryRefreshTimer is not null)
+        {
+            _libraryRefreshTimer.Stop();
+            _libraryRefreshTimer.Tick -= OnLibraryRefreshTick;
+        }
+
+        foreach (var watcher in _libraryWatchers)
+        {
+            watcher.EnableRaisingEvents = false;
+            watcher.Created -= OnLibraryChanged;
+            watcher.Deleted -= OnLibraryChanged;
+            watcher.Changed -= OnLibraryChanged;
+            watcher.Renamed -= OnLibraryChanged;
+            watcher.Error -= OnLibraryWatcherError;
+            watcher.Dispose();
+        }
+
+        _libraryWatchers.Clear();
+    }
+
+    private void OnLibraryChanged(object sender, FileSystemEventArgs e)
+    {
+        QueueLibraryRefresh();
+    }
+
+    private void OnLibraryWatcherError(object sender, ErrorEventArgs e)
+    {
+        Trace($"library-watch-error:{e.GetException().GetBaseException().Message}");
+        QueueLibraryRefresh();
+    }
+
+    private void QueueLibraryRefresh()
+    {
+        if (_closing)
+        {
+            return;
+        }
+
+        try
+        {
+            _ = Dispatcher.BeginInvoke(ScheduleLibraryRefresh);
+        }
+        catch (InvalidOperationException)
+        {
+            // The window dispatcher is already shutting down.
+        }
+    }
+
+    private void ScheduleLibraryRefresh()
+    {
+        if (_closing)
+        {
+            return;
+        }
+
+        _libraryRefreshTimer ??= new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(400),
+        };
+        _libraryRefreshTimer.Stop();
+        _libraryRefreshTimer.Tick -= OnLibraryRefreshTick;
+        _libraryRefreshTimer.Tick += OnLibraryRefreshTick;
+        _libraryRefreshTimer.Start();
+    }
+
+    private void OnLibraryRefreshTick(object? sender, EventArgs e)
+    {
+        _libraryRefreshTimer?.Stop();
+        if (_closing)
+        {
+            return;
+        }
+
+        // A new file updates the menu only. The loaded model stays put.
+        RefreshLibraryMenus();
+    }
+
+    private void RefreshLibraryMenus()
+    {
+        try
+        {
+            _library = ModelLibraryScanner.Scan(CurrentLibraryRoot());
+        }
+        catch (Exception exception)
+        {
+            Trace($"library-scan-failed:{exception.GetBaseException().Message}");
+            _library = ModelLibrary.Empty;
+        }
+
+        Trace($"library-scan:{_library.Models.Count}:{_library.Motions.Count}:{_library.Music.Count}");
+        FillLibraryMenu(_libraryModelsMenu, _library.Models, OnLibraryModelClick);
+        FillLibraryMenu(_libraryMotionsMenu, _library.Motions, OnLibraryMotionClick);
+        FillLibraryMenu(_libraryMusicMenu, _library.Music, OnLibraryMusicClick);
+    }
+
+    private void FillLibraryMenu(MenuItem menu, IReadOnlyList<LibraryFile> files, RoutedEventHandler onClick)
+    {
+        menu.Items.Clear();
+        if (files.Count == 0)
+        {
+            var empty = new MenuItem
+            {
+                Header = Text("（空）", "(empty)"),
+                IsEnabled = false,
+            };
+            ConfigureMenuItem(empty);
+            menu.Items.Add(empty);
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            var item = new MenuItem
+            {
+                Header = ModelLibraryScanner.EscapeMenuHeader(file.DisplayName),
+                Tag = file.FullPath,
+                ToolTip = file.FullPath,
+                StaysOpenOnClick = true,
+            };
+            ConfigureMenuItem(item);
+            item.Click += onClick;
+            menu.Items.Add(item);
+        }
+    }
+
+    private async Task<bool> TryLoadFirstLibraryModelAsync()
+    {
+        ModelLibrary library;
+        try
+        {
+            library = ModelLibraryScanner.Scan(CurrentLibraryRoot());
+        }
+        catch (Exception exception)
+        {
+            Trace($"library-scan-failed:{exception.GetBaseException().Message}");
+            return false;
+        }
+
+        if (!StartupModelPolicy.ShouldLoadFirstLibraryModel(
+                _settings.LastModelPath,
+                IsExistingFile,
+                library.Models.Count))
+        {
+            return false;
+        }
+
+        var model = library.Models[0];
+        Trace($"startup-plan:library-model:{model.FullPath}");
+        try
+        {
+            await LoadModelFileAsync(model.FullPath, recordRecent: true);
+        }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Trace($"startup-model-skipped:{exception.GetBaseException().Message}");
+            return false;
+        }
+
+        if (library.Motions.Count >= 1)
+        {
+            var motion = library.Motions[0];
+            Trace($"startup-plan:library-motion:{motion.FullPath}");
+            try
+            {
+                await LoadMotionFileAsync(motion.FullPath, recordRecent: true);
+            }
+            catch (Exception exception) when (IsSuperseded(exception))
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                Trace($"startup-motion-skipped:{exception.GetBaseException().Message}");
+            }
+        }
+
+        return true;
+    }
+
+    private void OnOpenLibraryFolderClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var root = CurrentLibraryRoot();
+            ModelLibraryScanner.EnsureFolders(root);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = ModelLibraryScanner.ModelsDirectory(root),
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception exception)
+        {
+            ShowActionError(exception);
+        }
+    }
+
+    private void OnRescanLibraryClick(object sender, RoutedEventArgs e)
+    {
+        var fresh = UserSettingsStore.Load();
+        _settings.LibraryFolder = fresh.LibraryFolder;
+        StartLibraryWatch();
+    }
+
+    private async void OnLibraryModelClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string path })
+        {
+            return;
+        }
+
+        await RunUserFileAction(() => LoadModelFileAsync(path));
+    }
+
+    private async void OnLibraryMotionClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string path })
+        {
+            return;
+        }
+
+        await RunUserFileAction(() => LoadMotionFileAsync(path));
+    }
+
+    private async void OnLibraryMusicClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string path })
+        {
+            return;
+        }
+
+        await RunUserFileAction(() => LoadMusicFileAsync(path));
     }
 
     private void RefreshRecentMenus()
@@ -2758,7 +3100,8 @@ public partial class MainWindow : Window
     {
         var name = Path.GetFileName(path);
         var parent = Path.GetFileName(Path.GetDirectoryName(path) ?? string.Empty);
-        return string.IsNullOrWhiteSpace(parent) ? name : $"{name}  ({parent})";
+        var header = string.IsNullOrWhiteSpace(parent) ? name : $"{name}  ({parent})";
+        return ModelLibraryScanner.EscapeMenuHeader(header);
     }
 
     private async void OnOpenModelMenuClick(object sender, RoutedEventArgs e)

@@ -190,4 +190,12 @@ internal static class StartupModelPolicy
     {
         return !string.IsNullOrWhiteSpace(path) && fileExists(path);
     }
+
+    public static bool ShouldLoadFirstLibraryModel(
+        string? lastModelPath,
+        Func<string, bool> fileExists,
+        int libraryModelCount)
+    {
+        return libraryModelCount >= 1 && !ShouldRestoreLastModel(lastModelPath, fileExists);
+    }
 }

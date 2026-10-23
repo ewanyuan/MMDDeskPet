@@ -93,33 +93,67 @@ public partial class App : System.Windows.Application
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(deadlineSeconds));
         Task? work = null;
         var passed = false;
+        var libraryModels = 0;
+        var libraryMotions = 0;
+        string? chosenModel = options.ModelPath;
+        string? chosenMotion = options.MotionPath;
 
         try
         {
-            if (string.IsNullOrWhiteSpace(options.ModelPath))
+            if (!string.IsNullOrWhiteSpace(options.LibraryFolder))
             {
-                errors.Add("Smoke test requires --model <path.pmx>.");
+                try
+                {
+                    var library = ModelLibraryScanner.Scan(options.LibraryFolder);
+                    libraryModels = library.Models.Count;
+                    libraryMotions = library.Motions.Count;
+                    if (string.IsNullOrWhiteSpace(chosenModel))
+                    {
+                        if (library.Models.Count == 0)
+                        {
+                            errors.Add("The library has no PMX models: " + options.LibraryFolder);
+                        }
+                        else
+                        {
+                            chosenModel = library.Models[0].FullPath;
+                            if (string.IsNullOrWhiteSpace(chosenMotion) && library.Motions.Count > 0)
+                            {
+                                chosenMotion = library.Motions[0].FullPath;
+                            }
+                        }
+                    }
+                }
+                catch (Exception exception)
+                {
+                    errors.Add("The library could not be scanned: " + exception.GetBaseException().Message);
+                }
             }
-            else if (!File.Exists(options.ModelPath))
-            {
-                errors.Add("The PMX model was not found: " + options.ModelPath);
-            }
-            else if (!string.IsNullOrWhiteSpace(options.MotionPath) && !File.Exists(options.MotionPath))
-            {
-                errors.Add("The VMD motion was not found: " + options.MotionPath);
-            }
-            else
-            {
 
-            window = new MainWindow(autoLoad: false, options)
+            if (errors.Count == 0 && string.IsNullOrWhiteSpace(chosenModel))
             {
-                SuppressDialogs = true,
-            };
-            window.Show();
-            transparentWindow = DescribeTransparency(window);
-            var smokeWindow = window;
-            work = RunBodyAsync(smokeWindow);
-            var finished = await Task.WhenAny(work, Task.Delay(Timeout.Infinite, deadline.Token));
+                errors.Add("Smoke test requires --model <path.pmx> or --library <folder>.");
+            }
+            else if (errors.Count == 0 && !File.Exists(chosenModel))
+            {
+                errors.Add("The PMX model was not found: " + chosenModel);
+            }
+            else if (errors.Count == 0
+                && !string.IsNullOrWhiteSpace(chosenMotion)
+                && !File.Exists(chosenMotion))
+            {
+                errors.Add("The VMD motion was not found: " + chosenMotion);
+            }
+            else if (errors.Count == 0)
+            {
+                window = new MainWindow(autoLoad: false, options)
+                {
+                    SuppressDialogs = true,
+                };
+                window.Show();
+                transparentWindow = DescribeTransparency(window);
+                var smokeWindow = window;
+                work = RunBodyAsync(smokeWindow);
+                var finished = await Task.WhenAny(work, Task.Delay(Timeout.Infinite, deadline.Token));
                 if (finished != work)
                 {
                     errors.Add($"Smoke test did not finish within {deadlineSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)} seconds.");
@@ -129,7 +163,7 @@ public partial class App : System.Windows.Application
                     await work;
                     passed = modelLoaded
                         && errors.Count == 0
-                        && (string.IsNullOrWhiteSpace(options.MotionPath) || (motionLoaded && playbackAdvanced));
+                        && (string.IsNullOrWhiteSpace(chosenMotion) || (motionLoaded && playbackAdvanced));
                 }
             }
         }
@@ -169,7 +203,9 @@ public partial class App : System.Windows.Application
                 loadMs,
                 errors,
                 webview2Version,
-                transparentWindow);
+                transparentWindow,
+                libraryModels,
+                libraryMotions);
             try
             {
                 window?.Close();
@@ -192,11 +228,11 @@ public partial class App : System.Windows.Application
             await smokeWindow.InitializeRuntimeAsync();
             webview2Version = smokeWindow.Browser.CoreWebView2?.Environment.BrowserVersionString ?? string.Empty;
             var stopwatch = Stopwatch.StartNew();
-            await smokeWindow.LoadModelFileAsync(options.ModelPath!, recordRecent: false);
+            await smokeWindow.LoadModelFileAsync(chosenModel!, recordRecent: false);
             modelLoaded = true;
-            if (!string.IsNullOrWhiteSpace(options.MotionPath))
+            if (!string.IsNullOrWhiteSpace(chosenMotion))
             {
-                await smokeWindow.LoadMotionFileAsync(options.MotionPath, recordRecent: false);
+                await smokeWindow.LoadMotionFileAsync(chosenMotion, recordRecent: false);
                 motionLoaded = true;
                 stopwatch.Stop();
                 loadMs = stopwatch.ElapsedMilliseconds;
@@ -265,7 +301,9 @@ public partial class App : System.Windows.Application
         long loadMs,
         IReadOnlyList<string> errors,
         string webview2Version,
-        object? transparentWindow)
+        object? transparentWindow,
+        int libraryModels = 0,
+        int libraryMotions = 0)
     {
         var payload = new
         {
@@ -275,6 +313,8 @@ public partial class App : System.Windows.Application
             loadMs,
             errors,
             webview2Version,
+            libraryModels,
+            libraryMotions,
             transparentWindow = transparentWindow ?? new
             {
                 ok = false,

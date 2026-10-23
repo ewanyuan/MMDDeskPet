@@ -10,9 +10,9 @@ VRM への変換は不要です。PMX モデルをそのまま Windows のデス
 
 ## 快速开始 | Quick start | クイックスタート
 
-1. 下载。 Download. ダウンロードする。
-2. 双击 `MMDDeskPet.exe`。 Double-click `MMDDeskPet.exe`. `MMDDeskPet.exe` をダブルクリックする。
-3. 把 `.pmx` 或 `.vmd` 拖进窗口。 Drag a `.pmx` or `.vmd` into the window. `.pmx` または `.vmd` をウィンドウにドラッグする。
+1. 下载并双击 `MMDDeskPet.exe`。 Download and double-click `MMDDeskPet.exe`. ダウンロードして `MMDDeskPet.exe` をダブルクリックする。
+2. 把模型放进 models 文件夹，或直接拖进窗口。 Put the model in the models folder, or drop it into the window. モデルを models フォルダに入れるか、ウィンドウにドロップする。
+3. 动作放进 motions 文件夹，或把 `.vmd` 拖进窗口。 Put a motion in the motions folder, or drop a `.vmd` into the window. モーションは motions フォルダに入れるか、`.vmd` をウィンドウにドラッグする。
 
 ## 系统要求 | System requirements | 動作環境
 
@@ -112,11 +112,11 @@ pnpm --dir .\mmd-runtime install
 powershell -ExecutionPolicy Bypass -File .\tools\package-portable.ps1
 ```
 
-便携包写在 `dist/portable`，默认只有程序，不会复制本机的模型或动作。右键菜单也可以打开模型或动作。还没有模型时，窗口会提示拖入 PMX。
+便携包写在 `dist/portable`。里面有空的 `models`、`motions`、`music` 文件夹，不会复制本机的模型或动作。把 PMX 放进 `models`（每个模型可以单独放在子文件夹里，并带上贴图），或直接拖进窗口。右键菜单会列出找到的模型和动作。`settings.json` 里的 `libraryFolder` 可以改库的位置，默认是 exe 所在的文件夹。还没有模型时，窗口会提示拖入 PMX，或放进 models 文件夹。
 
-The portable package is written to `dist/portable`. By default it contains the program only and does not copy models or motions from the machine. The right-click menu can also open a model or a motion. With no model loaded, the window asks you to drop a PMX file.
+The portable package is written to `dist/portable`. It includes empty `models`, `motions`, and `music` folders and does not copy models or motions from the machine. Put a PMX in `models` (each model may sit in its own subfolder with its textures), or drop it on the window. The right-click menu lists the models and motions it finds. `libraryFolder` in `settings.json` can point the library somewhere else; the default is the folder that contains the exe. With no model loaded, the window asks you to drop a PMX or put one in the models folder.
 
-ポータブル版は `dist/portable` に出力されます。既定ではプログラムだけで、手元のモデルやモーションはコピーしません。右クリックメニューから開くこともできます。モデルが無いときは、PMX をドロップするようウィンドウが案内します。
+ポータブル版は `dist/portable` に出力されます。空の `models`、`motions`、`music` フォルダがあり、手元のモデルやモーションはコピーしません。PMX は `models` に置くか（モデルごとにサブフォルダへテクスチャと一緒に置けます）、ウィンドウへドロップします。右クリックメニューに見つかったモデルとモーションが出ます。`settings.json` の `libraryFolder` で場所を変えられ、既定は exe のあるフォルダです。モデルが無いときは、PMX をドロップするか models フォルダに入れるよう案内します。
 
 觉得有用就点个 Star，遇到问题欢迎提 issue。
 

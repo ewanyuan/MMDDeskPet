@@ -8,6 +8,8 @@ internal sealed class LaunchOptions
 
     internal string? MotionPath { get; private set; }
 
+    internal string? LibraryFolder { get; private set; }
+
     internal bool SmokeTest { get; private set; }
 
     internal double? ExitAfterSeconds { get; private set; }
@@ -40,6 +42,15 @@ internal sealed class LaunchOptions
                 }
 
                 options.MotionPath = value;
+            }
+            else if (HasName(argument, "--library"))
+            {
+                if (!TryTakeValue(args, argument, "--library", ref index, out var value, out error))
+                {
+                    return false;
+                }
+
+                options.LibraryFolder = value;
             }
             else if (HasName(argument, "--exit-after"))
             {

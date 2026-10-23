@@ -82,6 +82,11 @@ public class RuntimeBehaviorTests
         Assert.True(StartupModelPolicy.ShouldRestoreLastModel(
             @"C:\models\chosen.pmx",
             path => path.EndsWith("chosen.pmx", StringComparison.Ordinal)));
+        Assert.False(StartupModelPolicy.ShouldLoadFirstLibraryModel(@"C:\models\chosen.pmx", _ => true, 3));
+        Assert.True(StartupModelPolicy.ShouldLoadFirstLibraryModel(@"C:\models\missing.pmx", _ => false, 1));
+        Assert.True(StartupModelPolicy.ShouldLoadFirstLibraryModel(null, _ => false, 2));
+        Assert.False(StartupModelPolicy.ShouldLoadFirstLibraryModel(null, _ => false, 0));
+        Assert.True(StartupModelPolicy.ShouldLoadFirstLibraryModel("  ", _ => true, 4));
     }
 
     [Fact]
@@ -167,6 +172,129 @@ public class RuntimeBehaviorTests
         Assert.Contains("--model", missing, StringComparison.Ordinal);
         Assert.False(LaunchOptions.TryParse(["--exit-after", "0"], out _, out var badSeconds));
         Assert.Contains("--exit-after", badSeconds, StringComparison.Ordinal);
+
+        Assert.True(LaunchOptions.TryParse(
+            ["--library", @"D:\pet lib\Hime_&_Mikoto", "--smoke-test"],
+            out var libraryOptions,
+            out var libraryError));
+        Assert.Null(libraryError);
+        Assert.Equal(@"D:\pet lib\Hime_&_Mikoto", libraryOptions.LibraryFolder);
+        Assert.True(libraryOptions.SmokeTest);
+        Assert.Null(libraryOptions.ModelPath);
+
+        Assert.True(LaunchOptions.TryParse([@"--library=E:\motions"], out var libraryEquals, out _));
+        Assert.Equal(@"E:\motions", libraryEquals.LibraryFolder);
+        Assert.False(LaunchOptions.TryParse(["--smoke-test", "--library"], out _, out var missingLibrary));
+        Assert.Contains("--library", missingLibrary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LibraryScannerListsEveryModelSortedByFolderThenName()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-lib-" + Guid.NewGuid().ToString("N"));
+        var models = Path.Combine(root, "models");
+        var deep = Path.Combine(models, "a", "b", "c", "d");
+        var tooDeep = Path.Combine(deep, "e");
+        var hime = Path.Combine(models, "Hime_&_Mikoto");
+        var spaced = Path.Combine(models, "b folder");
+        Directory.CreateDirectory(Path.Combine(models, "A"));
+        Directory.CreateDirectory(deep);
+        Directory.CreateDirectory(tooDeep);
+        Directory.CreateDirectory(hime);
+        Directory.CreateDirectory(spaced);
+        Directory.CreateDirectory(Path.Combine(root, "motions", "sub"));
+        Directory.CreateDirectory(Path.Combine(root, "music"));
+
+        File.WriteAllText(Path.Combine(models, "README.txt"), "do not list");
+        File.WriteAllBytes(Path.Combine(models, "zeta.pmx"), [1]);
+        File.WriteAllBytes(Path.Combine(models, "A", "Upper.PMX"), [1]);
+        File.WriteAllBytes(Path.Combine(hime, "Hime.physics-stable.pmx"), [2]);
+        File.WriteAllBytes(Path.Combine(hime, "初音 ミク.pmx"), [3]);
+        File.WriteAllBytes(Path.Combine(deep, "deep.pmx"), [4]);
+        File.WriteAllBytes(Path.Combine(tooDeep, "too-deep.pmx"), [5]);
+        File.WriteAllBytes(Path.Combine(spaced, "second.pmx"), [6]);
+        File.WriteAllBytes(Path.Combine(root, "motions", "wave.vmd"), [7]);
+        File.WriteAllBytes(Path.Combine(root, "motions", "sub", "ダンス.vmd"), [8]);
+        File.WriteAllBytes(Path.Combine(root, "music", "song.mp3"), [9]);
+        File.WriteAllBytes(Path.Combine(root, "music", "tone.wav"), [10]);
+        File.WriteAllBytes(Path.Combine(root, "music", "clip.ogg"), [11]);
+        File.WriteAllBytes(Path.Combine(root, "music", "skip.m4a"), [12]);
+        File.WriteAllBytes(Path.Combine(root, "notes.pmx"), [13]);
+
+        try
+        {
+            var library = ModelLibraryScanner.Scan(root);
+            Assert.Equal(
+            [
+                "zeta.pmx",
+                "A/Upper.PMX",
+                "a/b/c/d/deep.pmx",
+                "b folder/second.pmx",
+                "Hime_&_Mikoto/Hime.physics-stable.pmx",
+                "Hime_&_Mikoto/初音 ミク.pmx",
+            ],
+            library.Models.Select(file => file.DisplayName).ToArray());
+            Assert.Contains(library.Models, file => file.DisplayName.Contains("Hime_&_Mikoto", StringComparison.Ordinal));
+            Assert.Contains(library.Models, file => file.DisplayName.Contains("初音 ミク", StringComparison.Ordinal));
+            Assert.Contains(library.Models, file => file.DisplayName.Contains("physics-stable", StringComparison.Ordinal));
+            Assert.DoesNotContain(library.Models, file => file.DisplayName.Contains("too-deep", StringComparison.Ordinal));
+            Assert.DoesNotContain(library.Models, file => file.DisplayName.Contains("README", StringComparison.Ordinal));
+            Assert.DoesNotContain(library.Models, file => file.DisplayName.Contains("notes", StringComparison.Ordinal));
+            Assert.All(library.Models, file => Assert.True(File.Exists(file.FullPath)));
+            Assert.Equal(
+                ["wave.vmd", "sub/ダンス.vmd"],
+                library.Motions.Select(file => file.DisplayName).ToArray());
+            Assert.Equal(
+                ["clip.ogg", "song.mp3", "tone.wav"],
+                library.Music.Select(file => file.DisplayName).ToArray());
+            Assert.Equal(
+                "Hime_&&_Mikoto/初音 ミク.pmx",
+                ModelLibraryScanner.EscapeMenuHeader("Hime_&_Mikoto/初音 ミク.pmx"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LibraryFoldersAreCreatedOnceAndBlankRootMeansTheExeFolder()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-lib-empty-" + Guid.NewGuid().ToString("N"));
+        var exe = Path.Combine(Path.GetTempPath(), "mmddeskpet-exe-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.Empty(ModelLibraryScanner.Scan(root).Models);
+            Assert.Empty(ModelLibraryScanner.Scan(root).Motions);
+            Assert.Empty(ModelLibraryScanner.Scan(root).Music);
+
+            ModelLibraryScanner.EnsureFolders(root);
+            Assert.Equal(
+                ModelLibraryScanner.ModelsReadme,
+                File.ReadAllText(Path.Combine(root, "models", "README.txt")));
+            Assert.Contains("VMD", File.ReadAllText(Path.Combine(root, "motions", "README.txt")), StringComparison.Ordinal);
+            Assert.Contains("动作", File.ReadAllText(Path.Combine(root, "motions", "README.txt")), StringComparison.Ordinal);
+            Assert.Contains("mp3", File.ReadAllText(Path.Combine(root, "music", "README.txt")), StringComparison.Ordinal);
+            Assert.Contains("音乐", File.ReadAllText(Path.Combine(root, "music", "README.txt")), StringComparison.Ordinal);
+            Assert.Empty(ModelLibraryScanner.Scan(root).Models);
+
+            File.WriteAllText(Path.Combine(root, "models", "README.txt"), "custom");
+            ModelLibraryScanner.EnsureFolders(root);
+            Assert.Equal("custom", File.ReadAllText(Path.Combine(root, "models", "README.txt")));
+
+            Assert.Equal(Path.GetFullPath(exe), ModelLibraryScanner.ResolveRoot(null, exe));
+            Assert.Equal(Path.GetFullPath(exe), ModelLibraryScanner.ResolveRoot("   ", exe));
+            var custom = Path.Combine(root, "elsewhere");
+            Assert.Equal(Path.GetFullPath(custom), ModelLibraryScanner.ResolveRoot(custom, exe));
+            Assert.False(string.IsNullOrWhiteSpace(ModelLibraryScanner.ExeDirectory()));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 
     [Fact]

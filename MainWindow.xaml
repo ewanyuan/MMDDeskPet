@@ -37,12 +37,14 @@
                 Visibility="Collapsed"
                 IsHitTestVisible="False">
             <TextBlock x:Name="EmptyHintText"
-                       Text="拖入 PMX 开始"
+                       Text="拖入 PMX，或放进 models 文件夹"
                        FontFamily="Segoe UI"
                        FontSize="22"
                        FontWeight="SemiBold"
                        Foreground="White"
-                       TextAlignment="Center" />
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       MaxWidth="340" />
         </Border>
     </Grid>
 </Window>
