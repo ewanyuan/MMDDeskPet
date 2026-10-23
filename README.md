@@ -1,6 +1,6 @@
 # MMD Desk Pet
 
-无需转换成 VRM。把 PMX 模型直接放到 Windows 桌面上，让它跟着 VMD 跳舞。
+无需转换成 VRM。让 PMX 模型在电脑桌面上跟着 VMD 跳舞。
 
 No VRM conversion needed. Put your PMX model straight onto the Windows desktop and have it dance to VMD.
 
