@@ -1,0 +1,60 @@
+# Build output and local IDE state
+bin/
+obj/
+dist/
+.vs/
+.idea/
+
+# Local JavaScript dependencies and generated runtime bundle
+mmd-runtime/node_modules/
+web/mmd.bundle.js
+web/mmd.bundle.js.map
+web/mmd-spr.wasm
+
+# Third-party model, motion, music, texture, and other asset binaries.
+# These are never part of the public source tree. The desktop pet loads
+# whatever PMX / VMD the user picks from disk.
+assets/Hime_&_Mikoto/
+assets/motions/*
+!assets/motions/MOTION-CREDITS.md
+assets/music/*
+*.pmx
+*.pmd
+*.obj
+*.vmd
+*.vpd
+*.zip
+*.mp4
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.tga
+*.bmp
+*.dds
+*.spa
+*.sph
+*.wav
+*.mp3
+*.ogg
+*.m4a
+*.aac
+*.flac
+
+# Local settings written when the app cannot use AppData
+settings.json
+
+# Local diagnostics, captures, generated reports and private notes
+acceptance-*
+diag-*
+menu-*.png
+native-*.png
+mmd-expression-audit-*
+mmd-expression-audit.json
+mmd-runtime-*
+zhixing-feedback-*.md
+
+# Local tool state
+*.user
+*.suo
+*.tmp
