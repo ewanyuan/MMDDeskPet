@@ -26,17 +26,31 @@ Windows 10/11 x64 と Microsoft Edge WebView2 Runtime。
 
 ## 素材与内容 | Assets and content | 素材と内容
 
-本程序不附带模型、动作或音乐。请只使用你有权使用的素材，并遵守原作者的条款。许多动作禁止再分发，也禁止 R18 使用。
+除了下一节的默认模型和舞蹈，本程序不附带其他模型、动作或音乐。请只使用你有权使用的素材，并遵守原作者的条款。许多动作禁止再分发，也禁止 R18 使用。
 
-This program ships with no models, motions, or music. Use assets you have rights to, and follow the original authors' terms. Many motions forbid redistribution or R18 use.
+Aside from the default model and dance in the next section, this program ships with no other models, motions, or music. Use assets you have rights to, and follow the original authors' terms. Many motions forbid redistribution or R18 use.
 
-本プログラムにモデル、モーション、音楽は同梱されていません。権利のある素材だけを使い、原作者の利用条件に従ってください。多くのモーションは再配布や R18 での使用を禁止しています。
+次の節の既定モデルとダンス以外に、モデル、モーション、音楽は同梱していません。権利のある素材だけを使い、原作者の利用条件に従ってください。多くのモーションは再配布や R18 での使用を禁止しています。
 
 程序带有一个可选的成人向表情菜单，默认关闭。未满 18 岁不要开启。
 
 The program includes an optional adult-oriented morph menu. It is off by default. People under 18 should not enable it.
 
 成人向けのモーフメニューを任意で備えています。初期状態ではオフです。18歳未満の方は有効にしないでください。
+
+## 随包素材 | Bundled assets | 同梱素材
+
+`assets/default` 里的文件不适用 GPL-3.0，各自带有自己的许可。
+
+模型是 CG-CA Uka：`CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society`，[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)。changes: textures resized/compressed。默认舞蹈 `mmddeskpet_groove_20s.vmd` 是 Ewan Yuan 的原创，[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)。待机动作 `stand.vmd` 与模型同属 CC BY 4.0，使用上面的署名，文件本身没有改动。旁边的 models 文件夹里没有模型、也没有上次打开的模型时，程序会自动加载 Uka，并循环播放这段舞蹈。右键菜单里有一项「默认角色 Uka」。如果你放了自己的模型，仍会先打开上次使用的模型，否则按原来的规则挑选。
+
+Files in `assets/default` are not under GPL-3.0. Each one has its own license.
+
+The model is CG-CA Uka: `CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society`, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). changes: textures resized/compressed. The default dance `mmddeskpet_groove_20s.vmd` is an original motion by Ewan Yuan, [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The idle motion `stand.vmd` is under the same CC BY 4.0 credit as the model, and that file is unmodified. When the models folder has no model and there is no last-opened model, the app loads Uka and loops this dance. The right-click menu has one entry, “Default character Uka”. If you add your own models, the app still opens the last model first, then uses the existing pick rules.
+
+`assets/default` のファイルは GPL-3.0 の対象外で、それぞれ独自のライセンスです。
+
+モデルは CG-CA Uka です。`CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society`。[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)。changes: textures resized/compressed。既定のダンス `mmddeskpet_groove_20s.vmd` は Ewan Yuan のオリジナルで、[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) です。待機モーション `stand.vmd` はモデルと同じ CC BY 4.0 で、上のクレジットを使い、ファイル自体は改変していません。models フォルダにモデルが無く、前回開いたモデルも無いときは、Uka を読み込み、このダンスをループ再生します。右クリックメニューには「Default character Uka」（中国語環境では「默认角色 Uka」）が一つだけ出ます。自分のモデルを置いた場合は、これまでどおり前回のモデルを優先し、無ければ既存の選択規則を使います。
 
 ## 致谢 | Credits | クレジット
 
@@ -120,11 +134,11 @@ pnpm --dir .\mmd-runtime install
 powershell -ExecutionPolicy Bypass -File .\tools\package-portable.ps1
 ```
 
-便携包写在 `dist/portable`。里面有空的 `models`、`motions`、`music` 文件夹，不会复制本机的模型或动作。把 PMX 放进 `models`（每个模型可以单独放在子文件夹里，并带上贴图），或直接拖进窗口。右键菜单会列出找到的模型和动作。`settings.json` 里的 `libraryFolder` 可以改库的位置，默认是 exe 所在的文件夹。还没有模型时，窗口会提示拖入 PMX，或放进 models 文件夹。
+便携包写在 `dist/portable`。里面有空的 `models`、`motions`、`music` 文件夹，不会复制本机的模型或动作，但会带上 `assets/default` 里的 Uka 和默认舞蹈。把你自己的 PMX 放进 `models`（每个模型可以单独放在子文件夹里，并带上贴图），或直接拖进窗口。右键菜单会列出找到的模型和动作，另外有一项「默认角色 Uka」。`settings.json` 里的 `libraryFolder` 可以改库的位置，默认是 exe 所在的文件夹。库里没有模型、也没有上次打开的模型时，会自动加载 Uka 并循环播放默认舞蹈。
 
-The portable package is written to `dist/portable`. It includes empty `models`, `motions`, and `music` folders and does not copy models or motions from the machine. Put a PMX in `models` (each model may sit in its own subfolder with its textures), or drop it on the window. The right-click menu lists the models and motions it finds. `libraryFolder` in `settings.json` can point the library somewhere else; the default is the folder that contains the exe. With no model loaded, the window asks you to drop a PMX or put one in the models folder.
+The portable package is written to `dist/portable`. It includes empty `models`, `motions`, and `music` folders and does not copy models or motions from the machine, and it does include Uka and the default dance from `assets/default`. Put your own PMX in `models` (each model may sit in its own subfolder with its textures), or drop it on the window. The right-click menu lists the models and motions it finds, plus one entry, “Default character Uka”. `libraryFolder` in `settings.json` can point the library somewhere else; the default is the folder that contains the exe. With no library model and no last-opened model, it loads Uka and loops the default dance.
 
-ポータブル版は `dist/portable` に出力されます。空の `models`、`motions`、`music` フォルダがあり、手元のモデルやモーションはコピーしません。PMX は `models` に置くか（モデルごとにサブフォルダへテクスチャと一緒に置けます）、ウィンドウへドロップします。右クリックメニューに見つかったモデルとモーションが出ます。`settings.json` の `libraryFolder` で場所を変えられ、既定は exe のあるフォルダです。モデルが無いときは、PMX をドロップするか models フォルダに入れるよう案内します。
+ポータブル版は `dist/portable` に出力されます。空の `models`、`motions`、`music` フォルダがあり、手元のモデルやモーションはコピーしませんが、`assets/default` の Uka と既定ダンスは含まれます。自分の PMX は `models` に置くか（モデルごとにサブフォルダへテクスチャと一緒に置けます）、ウィンドウへドロップします。右クリックメニューに見つかったモデルとモーションが出て、加えて既定キャラクターの項目が一つあります。`settings.json` の `libraryFolder` で場所を変えられ、既定は exe のあるフォルダです。ライブラリにモデルが無く、前回のモデルも無いときは、Uka を読み込んで既定ダンスをループします。
 
 觉得有用就点个 Star，遇到问题欢迎提 issue。
 

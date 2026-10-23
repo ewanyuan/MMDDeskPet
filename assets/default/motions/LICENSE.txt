@@ -1,0 +1,8 @@
+mmddeskpet_groove_20s.vmd
+Original motion by Ewan Yuan.
+CC0 1.0 https://creativecommons.org/publicdomain/zero/1.0/
+
+stand.vmd
+Idle motion from CG-CA Uka. Unmodified.
+CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society
+CC BY 4.0 https://creativecommons.org/licenses/by/4.0/

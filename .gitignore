@@ -30,6 +30,10 @@ assets/music/*
 *.jpeg
 *.gif
 !docs/demo.gif
+!assets/default/**/*.pmx
+!assets/default/**/*.png
+!assets/default/**/*.vmd
+!assets/default/**/*.txt
 *.tga
 *.bmp
 *.dds
@@ -59,6 +63,10 @@ mmd-expression-audit-*
 mmd-expression-audit.json
 mmd-runtime-*
 zhixing-feedback-*.md
+
+# The win-x64 test package for this branch. Other zips stay ignored.
+!test-build/
+!test-build/MMDDeskPet-win-x64-test-uka.zip
 
 # Local tool state
 *.user

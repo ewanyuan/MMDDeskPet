@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private readonly UserSettings _settings;
     private readonly ContextMenu _petMenu = new();
     private readonly MenuItem _openModelMenu = new();
+    private readonly MenuItem _bundledDefaultMenu = new();
     private readonly MenuItem _openMotionMenu = new();
     private readonly MenuItem _openMusicMenu = new();
     private readonly MenuItem _recentModelsMenu = new();
@@ -559,11 +560,16 @@ public partial class MainWindow : Window
 
                 if (!loaded)
                 {
+                    loaded = await TryLoadBundledDefaultAsync();
+                }
+
+                if (!loaded)
+                {
                     Trace("startup-plan:empty");
                 }
             }
 
-            if (!StartupModelPolicy.ShouldAutoLoadBundledModel && !loaded)
+            if (!loaded)
             {
                 ShowEmptyHint();
             }
@@ -1308,6 +1314,15 @@ public partial class MainWindow : Window
     private void BuildBaseContextMenu()
     {
         ConfigureOpenMenu(_openModelMenu, Text("打开模型…", "Open model…"), OnOpenModelMenuClick);
+        ConfigureOpenMenu(
+            _bundledDefaultMenu,
+            Text("默认角色 Uka", "Default character Uka"),
+            OnBundledDefaultMenuClick);
+        _bundledDefaultMenu.ToolTip =
+            "CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society";
+        _bundledDefaultMenu.Visibility = BundledDefaultAvailable()
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         ConfigureOpenMenu(_openMotionMenu, Text("打开动作…", "Open motion…"), OnOpenMotionMenuClick);
         ConfigureOpenMenu(_openMusicMenu, Text("打开音乐…", "Open music…"), OnOpenMusicMenuClick);
         _libraryModelsMenu.Header = Text("模型", "Models");
@@ -1410,6 +1425,7 @@ public partial class MainWindow : Window
         _closeMenu.Click += OnCloseMenuClick;
 
         _petMenu.Items.Add(_openModelMenu);
+        _petMenu.Items.Add(_bundledDefaultMenu);
         _petMenu.Items.Add(_libraryModelsMenu);
         _petMenu.Items.Add(_openMotionMenu);
         _petMenu.Items.Add(_libraryMotionsMenu);
@@ -2676,7 +2692,7 @@ public partial class MainWindow : Window
         return message;
     }
 
-    internal async Task<JsonElement> LoadMotionFileAsync(string path, bool recordRecent = true)
+    internal async Task<JsonElement> LoadMotionFileAsync(string path, bool recordRecent = true, bool? loop = null)
     {
         if (!File.Exists(path))
         {
@@ -2712,7 +2728,7 @@ public partial class MainWindow : Window
         var motion = await LoadMotionAsync(
             Path.GetFileNameWithoutExtension(path),
             path,
-            loop: _settings.LoopMotion);
+            loop: loop ?? _settings.LoopMotion);
         if (motion.GetProperty("boneTracks").GetInt32() <= 0)
         {
             throw new InvalidDataException("The selected VMD contained no bone tracks.");
@@ -3063,6 +3079,91 @@ public partial class MainWindow : Window
         }
 
         return true;
+    }
+
+    private string BundledModelPath()
+    {
+        return ResolveProjectPath(StartupModelPolicy.BundledModelRelativePath);
+    }
+
+    private string BundledMotionPath()
+    {
+        return ResolveProjectPath(StartupModelPolicy.BundledMotionRelativePath);
+    }
+
+    private bool BundledDefaultAvailable()
+    {
+        return File.Exists(BundledModelPath()) && File.Exists(BundledMotionPath());
+    }
+
+    private async Task<bool> TryLoadBundledDefaultAsync()
+    {
+        var modelPath = BundledModelPath();
+        var motionPath = BundledMotionPath();
+        var libraryCount = 0;
+        try
+        {
+            libraryCount = ModelLibraryScanner.Scan(CurrentLibraryRoot()).Models.Count;
+        }
+        catch (Exception exception)
+        {
+            Trace($"library-scan-failed:{exception.GetBaseException().Message}");
+        }
+
+        if (!StartupModelPolicy.ShouldLoadBundledDefault(
+                _settings.LastModelPath,
+                IsExistingFile,
+                libraryCount,
+                File.Exists(modelPath),
+                File.Exists(motionPath)))
+        {
+            return false;
+        }
+
+        Trace($"startup-plan:bundled-default:{modelPath}");
+        try
+        {
+            await LoadModelFileAsync(modelPath, recordRecent: false);
+        }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Trace($"startup-model-skipped:{exception.GetBaseException().Message}");
+            return false;
+        }
+
+        Trace($"startup-plan:bundled-motion:{motionPath}");
+        try
+        {
+            await LoadMotionFileAsync(motionPath, recordRecent: false, loop: true);
+        }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Trace($"startup-motion-skipped:{exception.GetBaseException().Message}");
+        }
+
+        return true;
+    }
+
+    private async void OnBundledDefaultMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (!BundledDefaultAvailable())
+        {
+            return;
+        }
+
+        await RunUserFileAction(async () =>
+        {
+            await LoadModelFileAsync(BundledModelPath());
+            await LoadMotionFileAsync(BundledMotionPath(), loop: true);
+        });
     }
 
     private void OnOpenLibraryFolderClick(object sender, RoutedEventArgs e)

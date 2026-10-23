@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 
 namespace MMDDeskPet;
@@ -184,7 +185,11 @@ internal sealed class RuntimeRequestGate
 
 internal static class StartupModelPolicy
 {
-    public static bool ShouldAutoLoadBundledModel => false;
+    public static string BundledModelRelativePath { get; } =
+        Path.Combine("assets", "default", "uka", "MS_Uka.pmx");
+
+    public static string BundledMotionRelativePath { get; } =
+        Path.Combine("assets", "default", "motions", "mmddeskpet_groove_20s.vmd");
 
     public static bool ShouldRestoreLastModel(string? path, Func<string, bool> fileExists)
     {
@@ -197,5 +202,18 @@ internal static class StartupModelPolicy
         int libraryModelCount)
     {
         return libraryModelCount >= 1 && !ShouldRestoreLastModel(lastModelPath, fileExists);
+    }
+
+    public static bool ShouldLoadBundledDefault(
+        string? lastModelPath,
+        Func<string, bool> fileExists,
+        int libraryModelCount,
+        bool bundledModelExists,
+        bool bundledMotionExists)
+    {
+        return bundledModelExists
+            && bundledMotionExists
+            && libraryModelCount == 0
+            && !ShouldRestoreLastModel(lastModelPath, fileExists);
     }
 }

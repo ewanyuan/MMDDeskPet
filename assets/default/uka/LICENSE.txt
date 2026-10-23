@@ -1,0 +1,9 @@
+CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society
+
+CC BY 4.0 https://creativecommons.org/licenses/by/4.0/
+
+changes: textures resized/compressed
+
+Source: https://github.com/mmdagent-ex/uka
+Model file: MS_Uka.pmx (unchanged PMX 2.0).
+Textures the PMX references were scaled so the long side is at most 2048 pixels, then quantized. Transparency was kept where the original texture used it (FP.png and iraira.png). Texture file names are unchanged, so the paths stored in the PMX were not edited. iraira.png was already smaller than 2048 and was copied unchanged.

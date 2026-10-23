@@ -56,6 +56,12 @@ $creditsDestination = Join-Path $packageAssetsDirectory "motions/MOTION-CREDITS.
 New-Item -ItemType Directory -Path (Split-Path -Parent $creditsDestination) -Force | Out-Null
 Copy-Item -LiteralPath $creditsSource -Destination $creditsDestination -Force
 
+$defaultSource = Join-Path $projectDirectory "assets/default"
+if (-not (Test-Path -LiteralPath $defaultSource)) {
+    throw "The bundled default assets were not found: $defaultSource"
+}
+Copy-Item -LiteralPath $defaultSource -Destination (Join-Path $packageAssetsDirectory "default") -Recurse -Force
+
 # Default packaging copies no PMX, VMD, music, or textures.
 # -IncludeLocalPrivateAssets is opt-in and reads a local private model folder
 # that is not part of this repository.
@@ -81,8 +87,19 @@ if ($IncludeLocalPrivateAssets) {
 }
 
 if (-not $IncludeLocalPrivateAssets) {
+    $outputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path.TrimEnd('\', '/')
     $forbidden = Get-ChildItem -LiteralPath $OutputDirectory -Recurse -File |
-        Where-Object { $_.Extension.ToLowerInvariant() -in @(".pmx", ".pmd", ".vmd", ".vpd", ".tga", ".dds", ".spa", ".sph", ".bmp") }
+        Where-Object {
+            $extension = $_.Extension.ToLowerInvariant()
+            $blocked = $extension -in @(".pmx", ".pmd", ".vmd", ".vpd", ".tga", ".dds", ".spa", ".sph", ".bmp")
+            if (-not $blocked) {
+                return $false
+            }
+
+            $relative = $_.FullName.Substring($outputRoot.Length).TrimStart('\', '/').Replace('\', '/')
+            $bundledDefault = $relative.StartsWith("assets/default/") -and $extension -in @(".pmx", ".vmd")
+            return -not $bundledDefault
+        }
     if ($forbidden) {
         $names = $forbidden | ForEach-Object { $_.FullName }
         throw "Refusing to pack third-party model, motion, or texture files without -IncludeLocalPrivateAssets:`n$($names -join "`n")"
@@ -101,8 +118,8 @@ This is a portable build: keep the whole folder together.
 如果程序提示缺少 WebView2，请安装 Microsoft Edge WebView2 Runtime 后重试。
 If the app reports that WebView2 is missing, install the Microsoft Edge WebView2 Runtime and try again.
 
-默认包不含模型、动作和音乐。把 PMX 放进 models 文件夹（每个模型可以单独放在子文件夹里，并带上贴图），或拖进窗口。动作放进 motions，音乐放进 music。右键菜单里的「模型」「动作」会列出扫描结果。
-The default package does not include models, motions, or music. Put a PMX in the models folder (each model may sit in its own subfolder with its textures), or drop it onto the window. Put motions in motions and audio in music. The Models and Motions items in the right-click menu list what was scanned.
+安装后若 models 文件夹是空的，会自动加载随包的 Uka 和默认舞蹈并循环播放。右键菜单有一项「默认角色 Uka」。把自己的 PMX 放进 models 文件夹（每个模型可以单独放在子文件夹里，并带上贴图），或拖进窗口。动作放进 motions，音乐放进 music。右键菜单里的「模型」「动作」会列出扫描结果。assets/default 里的素材不使用 GPL，许可写在各自的 LICENSE.txt。
+If the models folder is empty after install, the bundled Uka model and default dance load automatically and loop. The right-click menu has one entry, Default character Uka. Put your own PMX in the models folder (each model may sit in its own subfolder with its textures), or drop it onto the window. Put motions in motions and audio in music. The Models and Motions items in the right-click menu list what was scanned. Files in assets/default are not under the GPL; their licenses are in LICENSE.txt.
 
 无人值守检查（不需要拖文件，跑完会自己退出，不会弹窗）：
 MMDDeskPet.exe --model "C:\path\model.pmx" --motion "C:\path\motion.vmd" --smoke-test --exit-after 90

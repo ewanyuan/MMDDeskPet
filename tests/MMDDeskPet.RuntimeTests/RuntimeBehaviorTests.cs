@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Xunit;
 
@@ -73,9 +74,8 @@ public class RuntimeBehaviorTests
     }
 
     [Fact]
-    public void StartupDoesNotAutoLoadABundledModel()
+    public void StartupLoadsTheBundledDefaultOnlyWhenTheLibraryIsEmpty()
     {
-        Assert.False(StartupModelPolicy.ShouldAutoLoadBundledModel);
         Assert.False(StartupModelPolicy.ShouldRestoreLastModel(null, _ => true));
         Assert.False(StartupModelPolicy.ShouldRestoreLastModel("  ", _ => true));
         Assert.False(StartupModelPolicy.ShouldRestoreLastModel(@"C:\models\missing.pmx", _ => false));
@@ -87,6 +87,55 @@ public class RuntimeBehaviorTests
         Assert.True(StartupModelPolicy.ShouldLoadFirstLibraryModel(null, _ => false, 2));
         Assert.False(StartupModelPolicy.ShouldLoadFirstLibraryModel(null, _ => false, 0));
         Assert.True(StartupModelPolicy.ShouldLoadFirstLibraryModel("  ", _ => true, 4));
+        Assert.True(StartupModelPolicy.ShouldLoadBundledDefault(null, _ => false, 0, true, true));
+        Assert.True(StartupModelPolicy.ShouldLoadBundledDefault("  ", _ => true, 0, true, true));
+        Assert.True(StartupModelPolicy.ShouldLoadBundledDefault(@"C:\missing.pmx", _ => false, 0, true, true));
+        Assert.False(StartupModelPolicy.ShouldLoadBundledDefault(@"C:\models\chosen.pmx", _ => true, 0, true, true));
+        Assert.False(StartupModelPolicy.ShouldLoadBundledDefault(null, _ => false, 2, true, true));
+        Assert.False(StartupModelPolicy.ShouldLoadBundledDefault(@"C:\missing.pmx", _ => false, 3, true, true));
+        Assert.False(StartupModelPolicy.ShouldLoadBundledDefault(null, _ => false, 0, false, true));
+        Assert.False(StartupModelPolicy.ShouldLoadBundledDefault(null, _ => false, 0, true, false));
+    }
+
+    [Fact]
+    public void BundledDefaultFilesKeepTheirOwnLicense()
+    {
+        var root = FindRepositoryRoot();
+        var model = Path.Combine(root, StartupModelPolicy.BundledModelRelativePath);
+        var motion = Path.Combine(root, StartupModelPolicy.BundledMotionRelativePath);
+        var stand = Path.Combine(root, "assets", "default", "motions", "stand.vmd");
+        var modelLicense = File.ReadAllText(Path.Combine(root, "assets", "default", "uka", "LICENSE.txt"));
+        var motionLicense = File.ReadAllText(Path.Combine(root, "assets", "default", "motions", "LICENSE.txt"));
+
+        Assert.True(File.Exists(model));
+        Assert.Equal("PMX ", Encoding.ASCII.GetString(File.ReadAllBytes(model)[..4]));
+        Assert.StartsWith("Vocaloid Motion Data", Encoding.ASCII.GetString(File.ReadAllBytes(motion)[..20]));
+        Assert.StartsWith("Vocaloid Motion Data", Encoding.ASCII.GetString(File.ReadAllBytes(stand)[..20]));
+        Assert.Contains(
+            "CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society",
+            modelLicense,
+            StringComparison.Ordinal);
+        Assert.Contains("https://creativecommons.org/licenses/by/4.0/", modelLicense, StringComparison.Ordinal);
+        Assert.Contains("changes: textures resized/compressed", modelLicense, StringComparison.Ordinal);
+        Assert.Contains("CC0 1.0", motionLicense, StringComparison.Ordinal);
+        Assert.Contains("https://creativecommons.org/publicdomain/zero/1.0/", motionLicense, StringComparison.Ordinal);
+        Assert.DoesNotContain("hair.png", modelLicense, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "MMDDeskPet.csproj")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("The MMD Desk Pet repository root was not found.");
     }
 
     [Fact]
