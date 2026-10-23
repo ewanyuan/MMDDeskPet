@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using Microsoft.Web.WebView2.Wpf;
 
 namespace MMDDeskPet;
 
@@ -10,9 +12,29 @@ public partial class App : System.Windows.Application
 {
     private async void OnStartup(object sender, StartupEventArgs e)
     {
+        if (!LaunchOptions.TryParse(e.Args, out var options, out var parseError))
+        {
+            if (e.Args.Any(argument => argument.Equals("--smoke-test", StringComparison.OrdinalIgnoreCase)))
+            {
+                WriteSmokeResult(
+                    modelLoaded: false,
+                    motionLoaded: false,
+                    playbackAdvanced: false,
+                    loadMs: 0,
+                    errors: [parseError ?? "The command line could not be parsed."],
+                    webview2Version: string.Empty,
+                    transparentWindow: null);
+                Environment.ExitCode = 1;
+                Shutdown();
+                return;
+            }
+
+            throw new ArgumentException(parseError);
+        }
+
         // The runtime self-test loads bundled models and writes captures.
         // A normal launch must not enter it.
-        if (e.Args.Any(argument => argument.Equals("--mmd-runtime-self-test", StringComparison.OrdinalIgnoreCase)))
+        if (options.SelfTest)
         {
             var passed = await RunMmdRuntimeSelfTestAsync();
             Environment.ExitCode = passed ? 0 : 1;
@@ -20,7 +42,7 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        if (e.Args.Any(argument => argument.Equals("--mmd-expression-audit", StringComparison.OrdinalIgnoreCase)))
+        if (options.ExpressionAudit)
         {
             var passed = await RunExpressionAuditAsync();
             Environment.ExitCode = passed ? 0 : 1;
@@ -28,9 +50,240 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        var window = new MainWindow(autoLoad: true);
+        if (options.SmokeTest)
+        {
+            var passed = await RunSmokeTestAsync(options);
+            Environment.ExitCode = passed ? 0 : 1;
+            Shutdown();
+            return;
+        }
+
+        ArmExitAfter(options);
+        var window = new MainWindow(autoLoad: true, options);
         MainWindow = window;
         window.Show();
+    }
+
+    private void ArmExitAfter(LaunchOptions options)
+    {
+        if (options.ExitAfterSeconds is not > 0)
+        {
+            return;
+        }
+
+        var seconds = options.ExitAfterSeconds.Value;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(seconds));
+            await Dispatcher.InvokeAsync(Shutdown);
+        });
+    }
+
+    private static async Task<bool> RunSmokeTestAsync(LaunchOptions options)
+    {
+        var errors = new List<string>();
+        var modelLoaded = false;
+        var motionLoaded = false;
+        var playbackAdvanced = false;
+        long loadMs = 0;
+        var webview2Version = string.Empty;
+        object? transparentWindow = null;
+        MainWindow? window = null;
+        var deadlineSeconds = options.ExitAfterSeconds is > 0 ? options.ExitAfterSeconds.Value : 120;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(deadlineSeconds));
+        Task? work = null;
+        var passed = false;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(options.ModelPath))
+            {
+                errors.Add("Smoke test requires --model <path.pmx>.");
+            }
+            else if (!File.Exists(options.ModelPath))
+            {
+                errors.Add("The PMX model was not found: " + options.ModelPath);
+            }
+            else if (!string.IsNullOrWhiteSpace(options.MotionPath) && !File.Exists(options.MotionPath))
+            {
+                errors.Add("The VMD motion was not found: " + options.MotionPath);
+            }
+            else
+            {
+
+            window = new MainWindow(autoLoad: false, options)
+            {
+                SuppressDialogs = true,
+            };
+            window.Show();
+            transparentWindow = DescribeTransparency(window);
+            var smokeWindow = window;
+            work = RunBodyAsync(smokeWindow);
+            var finished = await Task.WhenAny(work, Task.Delay(Timeout.Infinite, deadline.Token));
+                if (finished != work)
+                {
+                    errors.Add($"Smoke test did not finish within {deadlineSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)} seconds.");
+                }
+                else
+                {
+                    await work;
+                    passed = modelLoaded
+                        && errors.Count == 0
+                        && (string.IsNullOrWhiteSpace(options.MotionPath) || (motionLoaded && playbackAdvanced));
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            errors.Add(exception.GetBaseException().Message);
+            return false;
+        }
+        finally
+        {
+            if (work is not null)
+            {
+                _ = work.ContinueWith(
+                    task => _ = task.Exception,
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
+            }
+
+            try
+            {
+                if (window?.Browser.CoreWebView2 is not null)
+                {
+                    webview2Version = window.Browser.CoreWebView2.Environment.BrowserVersionString;
+                    await window.CapturePreviewAsync(Path.Combine(Directory.GetCurrentDirectory(), "smoke-test.png"));
+                }
+            }
+            catch (Exception exception)
+            {
+                errors.Add("screenshot: " + exception.GetBaseException().Message);
+            }
+
+            WriteSmokeResult(
+                modelLoaded,
+                motionLoaded,
+                playbackAdvanced,
+                loadMs,
+                errors,
+                webview2Version,
+                transparentWindow);
+            try
+            {
+                window?.Close();
+            }
+            catch (Exception exception)
+            {
+                _ = exception;
+            }
+
+            if (errors.Count > 0)
+            {
+                passed = false;
+            }
+        }
+
+        return passed;
+
+        async Task RunBodyAsync(MainWindow smokeWindow)
+        {
+            await smokeWindow.InitializeRuntimeAsync();
+            webview2Version = smokeWindow.Browser.CoreWebView2?.Environment.BrowserVersionString ?? string.Empty;
+            var stopwatch = Stopwatch.StartNew();
+            await smokeWindow.LoadModelFileAsync(options.ModelPath!, recordRecent: false);
+            modelLoaded = true;
+            if (!string.IsNullOrWhiteSpace(options.MotionPath))
+            {
+                await smokeWindow.LoadMotionFileAsync(options.MotionPath, recordRecent: false);
+                motionLoaded = true;
+                stopwatch.Stop();
+                loadMs = stopwatch.ElapsedMilliseconds;
+                double? lowest = null;
+                double? highest = null;
+                var until = DateTime.UtcNow.AddSeconds(6);
+                while (DateTime.UtcNow < until && !deadline.IsCancellationRequested)
+                {
+                    var frame = await smokeWindow.ReadAnimationFrameAsync();
+                    if (frame is double value)
+                    {
+                        lowest = lowest is null ? value : Math.Min(lowest.Value, value);
+                        highest = highest is null ? value : Math.Max(highest.Value, value);
+                        if (highest.Value - lowest.Value >= 2 || highest.Value >= 3)
+                        {
+                            playbackAdvanced = true;
+                            break;
+                        }
+                    }
+
+                    await Task.Delay(100);
+                }
+
+                if (!playbackAdvanced)
+                {
+                    errors.Add("Motion playback did not advance by a few frames.");
+                }
+            }
+            else
+            {
+                stopwatch.Stop();
+                loadMs = stopwatch.ElapsedMilliseconds;
+            }
+        }
+    }
+
+    private static object DescribeTransparency(MainWindow window)
+    {
+        var alpha = window.Browser.DefaultBackgroundColor.A;
+        var composition = window.Browser is WebView2CompositionControl;
+        var background = window.Background?.ToString() ?? string.Empty;
+        var ok = window.AllowsTransparency
+            && window.WindowStyle == WindowStyle.None
+            && alpha == 0
+            && composition;
+        return new
+        {
+            ok,
+            flags = new
+            {
+                allowsTransparency = window.AllowsTransparency,
+                windowStyle = window.WindowStyle.ToString(),
+                background,
+                webViewBackgroundAlpha = alpha,
+                compositionControl = composition,
+                showInTaskbar = window.ShowInTaskbar,
+                topmost = window.Topmost,
+            },
+        };
+    }
+
+    private static void WriteSmokeResult(
+        bool modelLoaded,
+        bool motionLoaded,
+        bool playbackAdvanced,
+        long loadMs,
+        IReadOnlyList<string> errors,
+        string webview2Version,
+        object? transparentWindow)
+    {
+        var payload = new
+        {
+            modelLoaded,
+            motionLoaded,
+            playbackAdvanced,
+            loadMs,
+            errors,
+            webview2Version,
+            transparentWindow = transparentWindow ?? new
+            {
+                ok = false,
+                flags = new { },
+            },
+        };
+        File.WriteAllText(
+            Path.Combine(Directory.GetCurrentDirectory(), "smoke-test-result.json"),
+            JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static async Task<bool> RunExpressionAuditAsync()

@@ -18,6 +18,9 @@
     <Compile Remove="ObjLoader.cs" />
     <Compile Remove="PmxLoader.cs" />
     <Compile Remove="PmxRenderer.cs" />
+    <Compile Remove="tests/**" />
+    <Content Remove="tests/**" />
+    <None Remove="tests/**" />
     <Content Include="web\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

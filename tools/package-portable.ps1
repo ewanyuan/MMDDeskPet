@@ -104,6 +104,13 @@ If the app reports that WebView2 is missing, install the Microsoft Edge WebView2
 默认包不含模型、动作和音乐。把 PMX 拖进窗口，或在右键菜单里打开。
 The default package does not include models, motions, or music. Drop a PMX file onto the window, or open one from the right-click menu.
 
+无人值守检查（不需要拖文件，跑完会自己退出，不会弹窗）：
+MMDDeskPet.exe --model "C:\path\model.pmx" --motion "C:\path\motion.vmd" --smoke-test --exit-after 90
+结果在启动目录的 smoke-test-result.json 和 smoke-test.png，日志在 mmd-runtime-self-test-trace.txt。
+Unattended check (no drag-and-drop, exits by itself, no message boxes):
+MMDDeskPet.exe --model "C:\path\model.pmx" --motion "C:\path\motion.vmd" --smoke-test --exit-after 90
+Results are smoke-test-result.json and smoke-test.png next to the trace log mmd-runtime-self-test-trace.txt.
+
 第三方素材仍受原始条款约束，请勿擅自再分发。
 Third-party assets remain subject to their original terms. Do not redistribute them without permission.
 "@

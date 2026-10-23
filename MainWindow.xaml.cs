@@ -16,7 +16,7 @@ public partial class MainWindow : Window
 {
     private const double SinglePetWidth = 480.0;
     private const double DualPetWidth = 1040.0;
-    private const string AppVirtualHost = "pet.local";
+    private const string AppVirtualHost = RuntimeAssetUrls.AppHost;
     private static readonly string[] SupportedMusicExtensions =
     [
         ".mp3",
@@ -175,10 +175,10 @@ public partial class MainWindow : Window
             ["AnaOpenEX"] = "肛部打开（异物）",
         };
     private readonly object _requestLock = new();
-    private readonly Dictionary<string, PendingRuntimeRequest> _pendingRequests = new(StringComparer.Ordinal);
+    private readonly RuntimeRequestGate _requests = new();
     private readonly List<EventWaiter> _eventWaiters = [];
     private readonly SemaphoreSlim _requestGate = new(1, 1);
-    private PendingRuntimeRequest? _activeLoad;
+    private readonly Queue<string> _commandsBeforeReady = new();
     private Task? _initializeTask;
     private int _startupStarted;
     private bool _sawPetNavigation;
@@ -197,15 +197,17 @@ public partial class MainWindow : Window
     private bool _modelHasClothingMorphs;
     private string? _activeModelPath;
     private string? _customMotionPath;
-    private readonly Dictionary<string, string> _externalFolderHosts = new(StringComparer.OrdinalIgnoreCase);
-    private int _externalHostSerial;
+    private readonly ExternalFileMap _externalFiles = new();
+    private readonly LaunchOptions _launch;
+    internal bool SuppressDialogs { get; set; }
     private MenuItem? _activeDanceMenuItem;
     private MenuItem? _hoveredMenuItem;
     private string TracePath => Path.Combine(Directory.GetCurrentDirectory(), "mmd-runtime-self-test-trace.txt");
 
-    public MainWindow(bool autoLoad)
+    internal MainWindow(bool autoLoad, LaunchOptions? launch = null)
     {
         _autoLoad = autoLoad;
+        _launch = launch ?? new LaunchOptions();
         _repositoryRoot = FindRepositoryRoot();
         _modelPaths =
         [
@@ -479,8 +481,28 @@ public partial class MainWindow : Window
         {
             await InitializeRuntimeAsync();
             var loaded = false;
-            if (IsExistingFile(_settings.LastModelPath))
+            if (IsExistingFile(_launch.ModelPath))
             {
+                Trace("startup-plan:command-line-model");
+                await LoadModelFileAsync(_launch.ModelPath!, recordRecent: true);
+                loaded = true;
+                if (!string.IsNullOrWhiteSpace(_launch.MotionPath))
+                {
+                    if (!IsExistingFile(_launch.MotionPath))
+                    {
+                        throw new FileNotFoundException("The VMD motion was not found.", _launch.MotionPath);
+                    }
+
+                    await LoadMotionFileAsync(_launch.MotionPath, recordRecent: true);
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(_launch.ModelPath))
+            {
+                throw new FileNotFoundException("The PMX model was not found.", _launch.ModelPath);
+            }
+            else if (StartupModelPolicy.ShouldRestoreLastModel(_settings.LastModelPath, IsExistingFile))
+            {
+                Trace("startup-plan:restore-last-model");
                 try
                 {
                     await LoadModelFileAsync(_settings.LastModelPath!, recordRecent: false);
@@ -499,21 +521,19 @@ public partial class MainWindow : Window
                 }
                 catch (Exception modelError)
                 {
-                    Trace($"startup-model-skipped:{modelError.Message}");
+                    Trace($"startup-model-skipped:{modelError.GetBaseException().Message}");
                 }
             }
-
-            if (!loaded && File.Exists(_modelPaths[0]))
+            else
             {
-                await LoadCharacterAsync(0);
-                loaded = true;
+                Trace("startup-plan:empty");
             }
 
-            if (!loaded)
+            if (!StartupModelPolicy.ShouldAutoLoadBundledModel && !loaded)
             {
                 ShowEmptyHint();
             }
-            else if (_currentCharacter == 0 && !_usingCustomModel)
+            else if (loaded && _currentCharacter == 0 && !_usingCustomModel)
             {
                 _ = PreloadSecondaryCharacterWhenIdleAsync();
             }
@@ -570,6 +590,12 @@ public partial class MainWindow : Window
 
     private void ShowStartupError(Exception exception)
     {
+        if (SuppressDialogs)
+        {
+            Trace($"startup-dialog-suppressed:{exception.GetBaseException().Message}");
+            return;
+        }
+
         var rootException = exception.GetBaseException();
         var message = rootException.Message.Contains("WebView2", StringComparison.OrdinalIgnoreCase)
             ? Text(
@@ -628,6 +654,14 @@ public partial class MainWindow : Window
                 AppVirtualHost,
                 _repositoryRoot,
                 CoreWebView2HostResourceAccessKind.Allow);
+            Trace($"virtual-host:{AppVirtualHost}->{_repositoryRoot}");
+            var externalFilter = $"https://{AppVirtualHost}/ext/*";
+            core.AddWebResourceRequestedFilter(
+                externalFilter,
+                CoreWebView2WebResourceContext.All,
+                CoreWebView2WebResourceRequestSourceKinds.All);
+            core.WebResourceRequested += OnExternalWebResourceRequested;
+            Trace($"virtual-host-filter:{externalFilter}");
             Browser.AllowExternalDrop = false;
             _navigationStarted = true;
             Trace("before-navigate");
@@ -868,6 +902,22 @@ public partial class MainWindow : Window
             supersedePreviousLoad: false);
     }
 
+    internal async Task<double?> ReadAnimationFrameAsync()
+    {
+        var core = Browser.CoreWebView2
+            ?? throw new InvalidOperationException("WebView2 is not initialized.");
+        var raw = await core.ExecuteScriptAsync(
+            "(() => { const runtime = window.MmdDeskPetRuntime && window.MmdDeskPetRuntime.runtime; const value = runtime && runtime.currentFrameTime; return typeof value === 'number' && Number.isFinite(value) ? value : null; })()");
+        if (string.IsNullOrWhiteSpace(raw) || raw == "null")
+        {
+            return null;
+        }
+
+        return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+    }
+
     public async Task PlayAsync()
     {
         PostCommand(new { type = "play" });
@@ -970,16 +1020,29 @@ public partial class MainWindow : Window
             {
                 return;
             }
-            Trace($"message:{type}");
+            Trace($"bridge-recv:{Truncate(e.WebMessageAsJson, 700)}");
             if (type.Equals("motion-loaded", StringComparison.Ordinal)
                 && root.TryGetProperty("rootOffset", out var rootOffset))
             {
                 Trace($"motion-root-offset:{rootOffset}");
             }
 
+            if (type.Equals("console-error", StringComparison.Ordinal))
+            {
+                var consoleMessage = root.TryGetProperty("message", out var consoleElement)
+                    ? consoleElement.GetString()
+                    : string.Empty;
+                Trace($"console-error:{consoleMessage}");
+                return;
+            }
+
             if (type.Equals("runtime-ready", StringComparison.Ordinal))
             {
-                _runtimeReady.TrySetResult(true);
+                if (_runtimeReady.TrySetResult(true))
+                {
+                    FlushQueuedCommands();
+                }
+
                 return;
             }
 
@@ -992,10 +1055,16 @@ public partial class MainWindow : Window
                     ? stackElement.GetString()
                     : string.Empty;
                 _lastRuntimeError = $"{message}{Environment.NewLine}{stack}";
-                Trace($"runtime-error:{_lastRuntimeError}");
-                var exception = new InvalidOperationException(_lastRuntimeError);
+                var requestId = root.TryGetProperty("requestId", out var errorRequestId)
+                    ? errorRequestId.GetString()
+                    : null;
+                Trace($"runtime-error:requestId={requestId}:{Truncate(message, 400)} stack={Truncate(stack, 400)}");
+                var exception = new InvalidOperationException(message ?? "Unknown MMD runtime error.");
                 _runtimeReady.TrySetException(exception);
-                FailRequestsFromRuntimeError(root, exception);
+                var failed = _requests.FailByRuntimeError(requestId, exception);
+                Trace(failed.Count > 0
+                    ? $"runtime-error-correlated:{requestId}:{string.Join(",", failed.Select(item => item.Operation))}"
+                    : $"runtime-error-unmatched:{requestId}");
                 return;
             }
 
@@ -1018,32 +1087,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private static string NewRequestId() => Guid.NewGuid().ToString("N");
-
     private async Task<JsonElement> SendRuntimeRequestAsync(
         string operation,
         string responseType,
         Func<string, object> commandFactory,
         bool supersedePreviousLoad)
     {
-        if (supersedePreviousLoad)
-        {
-            SupersedeActiveLoad(operation);
-        }
-
         await _requestGate.WaitAsync();
-        var request = new PendingRuntimeRequest(NewRequestId(), operation, responseType, supersedePreviousLoad);
+        var request = _requests.Begin(operation, responseType, supersedePreviousLoad);
+
         try
         {
-            lock (_requestLock)
-            {
-                _pendingRequests[request.RequestId] = request;
-                if (supersedePreviousLoad)
-                {
-                    _activeLoad = request;
-                }
-            }
-
             Trace($"request-start:{operation}:{request.RequestId}");
             PostCommand(commandFactory(request.RequestId));
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -1072,144 +1126,34 @@ public partial class MainWindow : Window
         }
         finally
         {
-            lock (_requestLock)
-            {
-                if (_pendingRequests.TryGetValue(request.RequestId, out var current)
-                    && ReferenceEquals(current, request))
-                {
-                    _pendingRequests.Remove(request.RequestId);
-                }
-
-                if (ReferenceEquals(_activeLoad, request))
-                {
-                    _activeLoad = null;
-                }
-            }
-
-            request.Cancel.Dispose();
+            _requests.Release(request);
             _requestGate.Release();
         }
     }
 
-    private void SupersedeActiveLoad(string nextOperation)
-    {
-        PendingRuntimeRequest? previous;
-        lock (_requestLock)
-        {
-            previous = _activeLoad;
-            if (previous is null)
-            {
-                return;
-            }
-
-            previous.Superseded = true;
-            previous.CancelReason = "superseded-by-" + nextOperation;
-            _pendingRequests.Remove(previous.RequestId);
-            _activeLoad = null;
-        }
-
-        SignalRequestCancelled(previous);
-    }
-
     private void CancelPendingRequests(string reason)
     {
-        List<PendingRuntimeRequest> pending;
+        var pending = _requests.CancelAll(reason);
         List<EventWaiter> events;
         lock (_requestLock)
         {
-            pending = _pendingRequests.Values.ToList();
             events = _eventWaiters.ToList();
-            _pendingRequests.Clear();
             _eventWaiters.Clear();
-            _activeLoad = null;
         }
 
         Trace($"request-cancel-all:{reason}:{pending.Count}");
-        foreach (var request in pending)
-        {
-            request.Superseded = true;
-            request.CancelReason = reason;
-            SignalRequestCancelled(request);
-        }
-
         foreach (var waiter in events)
         {
             waiter.Completion.TrySetException(new OperationCanceledException(reason));
         }
     }
 
-    private static void SignalRequestCancelled(PendingRuntimeRequest request)
-    {
-        request.Completion.TrySetException(new OperationCanceledException(request.CancelReason ?? "cancelled"));
-        try
-        {
-            request.Cancel.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // The waiter already left and disposed its cancellation source.
-        }
-    }
-
     private bool TryCompletePendingRequest(string type, JsonElement root)
-    {
-        if (!root.TryGetProperty("requestId", out var requestIdElement))
-        {
-            return false;
-        }
-
-        var requestId = requestIdElement.GetString();
-        if (string.IsNullOrWhiteSpace(requestId))
-        {
-            return false;
-        }
-
-        PendingRuntimeRequest? request;
-        lock (_requestLock)
-        {
-            if (!_pendingRequests.TryGetValue(requestId, out request)
-                || !string.Equals(request.ResponseType, type, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            _pendingRequests.Remove(requestId);
-        }
-
-        return request.Completion.TrySetResult(root.Clone());
-    }
-
-    private void FailRequestsFromRuntimeError(JsonElement root, Exception exception)
     {
         var requestId = root.TryGetProperty("requestId", out var requestIdElement)
             ? requestIdElement.GetString()
             : null;
-        List<PendingRuntimeRequest> failed = [];
-        lock (_requestLock)
-        {
-            if (!string.IsNullOrWhiteSpace(requestId)
-                && _pendingRequests.TryGetValue(requestId, out var match))
-            {
-                _pendingRequests.Remove(requestId);
-                if (ReferenceEquals(_activeLoad, match))
-                {
-                    _activeLoad = null;
-                }
-
-                failed.Add(match);
-            }
-            else if (string.IsNullOrWhiteSpace(requestId) && _pendingRequests.Count > 0)
-            {
-                failed.AddRange(_pendingRequests.Values);
-                _pendingRequests.Clear();
-                _activeLoad = null;
-            }
-        }
-
-        foreach (var request in failed)
-        {
-            request.Completion.TrySetException(exception);
-        }
+        return _requests.TryComplete(type, requestId, root);
     }
 
     private void TryCompleteEventWaiter(string type, JsonElement root)
@@ -1242,9 +1186,71 @@ public partial class MainWindow : Window
 
     private void PostCommand(object command)
     {
+        var json = JsonSerializer.Serialize(command);
+        bool sendNow;
+        lock (_requestLock)
+        {
+            if (_runtimeReady.Task.IsFaulted || _runtimeReady.Task.IsCanceled)
+            {
+                throw new InvalidOperationException("The MMD runtime failed before the command was sent.");
+            }
+
+            sendNow = _runtimeReady.Task.IsCompletedSuccessfully && _commandsBeforeReady.Count == 0;
+            if (!sendNow)
+            {
+                _commandsBeforeReady.Enqueue(json);
+                Trace($"bridge-queue:{Truncate(json, 500)}");
+            }
+        }
+
+        if (sendNow)
+        {
+            PostCommandNow(json);
+            return;
+        }
+
+        if (_runtimeReady.Task.IsCompletedSuccessfully)
+        {
+            FlushQueuedCommands();
+        }
+    }
+
+    private void FlushQueuedCommands()
+    {
+        while (true)
+        {
+            string? json;
+            lock (_requestLock)
+            {
+                if (_commandsBeforeReady.Count == 0)
+                {
+                    return;
+                }
+
+                json = _commandsBeforeReady.Dequeue();
+            }
+
+            PostCommandNow(json);
+        }
+    }
+
+    private void PostCommandNow(string json)
+    {
         var core = Browser.CoreWebView2
             ?? throw new InvalidOperationException("WebView2 is not initialized.");
-        core.PostWebMessageAsJson(JsonSerializer.Serialize(command));
+        Trace($"bridge-send:{Truncate(json, 500)}");
+        core.PostWebMessageAsJson(json);
+    }
+
+    private static string Truncate(string? value, int max)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var oneLine = value.Replace("\r", " ").Replace("\n", " ");
+        return oneLine.Length <= max ? oneLine : oneLine[..max] + "…";
     }
 
     private void BuildBaseContextMenu()
@@ -2028,59 +2034,124 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnExternalWebResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)
+    {
+        CoreWebView2? core = null;
+        try
+        {
+            core = Browser.CoreWebView2;
+            if (core is null || !Uri.TryCreate(e.Request.Uri, UriKind.Absolute, out var uri))
+            {
+                return;
+            }
+
+            if (!uri.Host.Equals(AppVirtualHost, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            string filePath;
+            lock (_requestLock)
+            {
+                if (!_externalFiles.TryResolve(uri.AbsolutePath, out filePath))
+                {
+                    Trace($"external-reject:{Truncate(uri.AbsolutePath, 300)}");
+                    e.Response = AssetResponse(core, new MemoryStream(), 404, "Not Found", "text/plain");
+                    return;
+                }
+            }
+
+            if (!File.Exists(filePath))
+            {
+                Trace($"external-miss:{Truncate(uri.AbsolutePath, 300)}");
+                e.Response = AssetResponse(core, new MemoryStream(), 404, "Not Found", "text/plain");
+                return;
+            }
+
+            var stream = new FileStream(
+                filePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            Trace($"external-serve:{Truncate(uri.AbsolutePath, 300)}:{stream.Length}");
+            e.Response = AssetResponse(core, stream, 200, "OK", ContentTypeFor(filePath));
+        }
+        catch (Exception exception)
+        {
+            Trace($"external-fault:{exception.GetBaseException().Message}");
+            if (core is not null)
+            {
+                try
+                {
+                    e.Response = AssetResponse(core, new MemoryStream(), 500, "Error", "text/plain");
+                }
+                catch (Exception responseException)
+                {
+                    Trace($"external-fault-response:{responseException.GetBaseException().Message}");
+                }
+            }
+        }
+    }
+
+    private static CoreWebView2WebResourceResponse AssetResponse(
+        CoreWebView2 core,
+        Stream content,
+        int status,
+        string reason,
+        string contentType)
+    {
+        var headers = $"Content-Type: {contentType}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-store\r\n";
+        return core.Environment.CreateWebResourceResponse(content, status, reason, headers);
+    }
+
+    private static string ContentTypeFor(string path)
+    {
+        return Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".bmp" => "image/bmp",
+            ".gif" => "image/gif",
+            ".tga" => "image/x-tga",
+            ".wav" => "audio/wav",
+            ".mp3" => "audio/mpeg",
+            ".ogg" => "audio/ogg",
+            ".m4a" => "audio/mp4",
+            ".aac" => "audio/aac",
+            ".flac" => "audio/flac",
+            ".mp4" => "video/mp4",
+            ".wasm" => "application/wasm",
+            ".js" => "text/javascript",
+            ".html" => "text/html",
+            ".css" => "text/css",
+            _ => "application/octet-stream",
+        };
+    }
+
     private string ToRuntimeUrl(string absolutePath)
     {
         var fullPath = Path.GetFullPath(absolutePath);
-        if (IsInsideDirectory(_repositoryRoot, fullPath))
+        if (ExternalFileMap.IsInsideDirectory(_repositoryRoot, fullPath))
         {
-            return BuildVirtualUrl(AppVirtualHost, Path.GetRelativePath(_repositoryRoot, fullPath));
+            return RuntimeAssetUrls.ForAppFile(Path.GetRelativePath(_repositoryRoot, fullPath));
         }
 
-        var directory = Path.GetDirectoryName(fullPath)
-            ?? throw new InvalidOperationException("The selected file does not have a directory.");
-        return BuildVirtualUrl(EnsureExternalFolderHost(directory), Path.GetFileName(fullPath));
-    }
-
-    private string EnsureExternalFolderHost(string directory)
-    {
-        var fullDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
-        if (_externalFolderHosts.TryGetValue(fullDirectory, out var existingHost))
+        string url;
+        string token;
+        bool created;
+        lock (_requestLock)
         {
-            return existingHost;
+            url = _externalFiles.UrlForFile(fullPath, out token, out created);
         }
 
-        var core = Browser.CoreWebView2
-            ?? throw new InvalidOperationException("WebView2 is not initialized.");
-        var host = $"ext{_externalHostSerial++}.local";
-        core.SetVirtualHostNameToFolderMapping(
-            host,
-            fullDirectory,
-            CoreWebView2HostResourceAccessKind.Allow);
-        _externalFolderHosts[fullDirectory] = host;
-        return host;
-    }
-
-    private static string BuildVirtualUrl(string host, string relativePath)
-    {
-        var encodedPath = string.Join(
-            "/",
-            relativePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries)
-                .Select(Uri.EscapeDataString));
-        return "https://" + host + "/" + encodedPath;
-    }
-
-    private static bool IsInsideDirectory(string root, string fullPath)
-    {
-        var relative = Path.GetRelativePath(root, fullPath);
-        if (Path.IsPathRooted(relative))
+        if (created)
         {
-            return false;
+            var directory = Path.GetDirectoryName(fullPath) ?? fullPath;
+            Trace($"external-map:{token}->{directory}");
         }
 
-        var firstSegment = relative
-            .Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault();
-        return firstSegment is not null && !firstSegment.Equals("..", StringComparison.Ordinal);
+        Trace($"external-url:{url}");
+        return url;
     }
 
     private string ResolveModelPath(string modelDirectory, string fileName)
@@ -2471,7 +2542,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<JsonElement> LoadModelFileAsync(
+    internal async Task<JsonElement> LoadModelFileAsync(
         string path,
         int? characterIndex = null,
         bool recordRecent = true)
@@ -2505,7 +2576,7 @@ public partial class MainWindow : Window
         return message;
     }
 
-    private async Task LoadMotionFileAsync(string path, bool recordRecent = true)
+    internal async Task LoadMotionFileAsync(string path, bool recordRecent = true)
     {
         if (!File.Exists(path))
         {
@@ -2972,6 +3043,12 @@ public partial class MainWindow : Window
 
     private void ShowInfo(string message)
     {
+        if (SuppressDialogs)
+        {
+            Trace($"info-dialog-suppressed:{message}");
+            return;
+        }
+
         MessageBox.Show(
             this,
             message,
@@ -2982,6 +3059,12 @@ public partial class MainWindow : Window
 
     private void ShowActionError(Exception exception)
     {
+        if (SuppressDialogs)
+        {
+            Trace($"action-dialog-suppressed:{exception.GetBaseException().Message}");
+            return;
+        }
+
         if (IsSuperseded(exception)
             || exception.GetBaseException().Message.Contains("already pending", StringComparison.OrdinalIgnoreCase))
         {
@@ -3086,33 +3169,6 @@ public partial class MainWindow : Window
         return File.Exists(Path.Combine(directory, "MMDDeskPet.exe"))
             || File.Exists(Path.Combine(directory, "HimeMikotoDesktopNative.exe"))
             || File.Exists(Path.Combine(directory, "使用说明.txt"));
-    }
-
-    private sealed class PendingRuntimeRequest
-    {
-        public PendingRuntimeRequest(string requestId, string operation, string responseType, bool load)
-        {
-            RequestId = requestId;
-            Operation = operation;
-            ResponseType = responseType;
-            Load = load;
-        }
-
-        public string RequestId { get; }
-
-        public string Operation { get; }
-
-        public string ResponseType { get; }
-
-        public bool Load { get; }
-
-        public TaskCompletionSource<JsonElement> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public CancellationTokenSource Cancel { get; } = new();
-
-        public bool Superseded { get; set; }
-
-        public string? CancelReason { get; set; }
     }
 
     private sealed class EventWaiter(string type, TaskCompletionSource<JsonElement> completion)

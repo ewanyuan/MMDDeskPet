@@ -1023,6 +1023,25 @@ async function loadDualMotion(name, primaryUrl, secondaryUrl, startFrame = 0, re
   });
 }
 
+const assetLoadTimeoutMs = 20000;
+
+function withAssetTimeout(work, label) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label} did not finish within ${assetLoadTimeoutMs / 1000} seconds.`));
+    }, assetLoadTimeoutMs);
+  });
+  // The underlying fetch can still reject after we already reported the timeout.
+  // Swallow that late rejection so it cannot cancel a newer request.
+  work.then(() => {}, () => {});
+  return Promise.race([work, timeout]).finally(() => {
+    if (timer !== null) {
+      clearTimeout(timer);
+    }
+  });
+}
+
 async function loadCachedMotion(name, url) {
   const normalizedUrl = normalizeModelUrl(url);
   const cached = state.motionCache.get(normalizedUrl);
@@ -1035,15 +1054,18 @@ async function loadCachedMotion(name, url) {
     return pending;
   }
 
-  const loadPromise = vmdLoader.loadAsync(name, normalizedUrl).then((motion) => {
-    const loaded = {
-      motion,
-      rootOffset: normalizeMotionRoot(motion),
-      visibilityTrackNormalized: normalizeMotionVisibility(motion),
-    };
-    state.motionCache.set(normalizedUrl, loaded);
-    return loaded;
-  }).finally(() => {
+  const loadPromise = withAssetTimeout(
+    vmdLoader.loadAsync(name, normalizedUrl).then((motion) => {
+      const loaded = {
+        motion,
+        rootOffset: normalizeMotionRoot(motion),
+        visibilityTrackNormalized: normalizeMotionVisibility(motion),
+      };
+      state.motionCache.set(normalizedUrl, loaded);
+      return loaded;
+    }),
+    `Loading motion ${normalizedUrl}`,
+  ).finally(() => {
     state.motionLoadPromises.delete(normalizedUrl);
   });
   state.motionLoadPromises.set(normalizedUrl, loadPromise);
@@ -1064,7 +1086,10 @@ async function preloadDualMotion(name, primaryUrl, secondaryUrl) {
 
 async function loadCharacterAsset(index, url) {
   const modelUrl = normalizeModelUrl(url);
-  const container = await LoadAssetContainerAsync(modelUrl, scene);
+  const container = await withAssetTimeout(
+    LoadAssetContainerAsync(modelUrl, scene),
+    `Loading ${modelUrl}`,
+  );
   container.addAllToScene();
 
   try {

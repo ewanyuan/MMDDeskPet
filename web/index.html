@@ -31,18 +31,54 @@
   <canvas id="renderCanvas" tabindex="0"></canvas>
   <script>
     (() => {
-      const report = (kind, value) => {
-        if (window.chrome?.webview) {
-          window.chrome.webview.postMessage({
-            type: "runtime-error",
-            operation: kind,
-            message: String(value),
-            stack: ""
-          });
+      const post = (payload) => {
+        try {
+          if (window.chrome?.webview) {
+            window.chrome.webview.postMessage(payload);
+          }
+        } catch {
+          // Bridge failures must not recurse through console.error.
         }
       };
-      window.addEventListener("error", event => report("window-error", event.message || event.error));
-      window.addEventListener("unhandledrejection", event => report("unhandled-rejection", event.reason));
+      const describe = (value) => {
+        if (value instanceof Error) {
+          return value.stack || value.message;
+        }
+        if (typeof value === "string") {
+          return value;
+        }
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
+        }
+      };
+      const originalError = console.error.bind(console);
+      console.error = (...args) => {
+        originalError(...args);
+        post({
+          type: "console-error",
+          message: args.map(describe).join(" ")
+        });
+      };
+      window.addEventListener("error", (event) => {
+        const error = event.error;
+        post({
+          type: "runtime-error",
+          operation: "window-error",
+          message: String(event.message || error || "window error"),
+          stack: error && error.stack ? error.stack : ""
+        });
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        const reason = event.reason;
+        post({
+          type: "runtime-error",
+          operation: "unhandled-rejection",
+          message: reason instanceof Error ? reason.message : String(reason),
+          stack: reason instanceof Error && reason.stack ? reason.stack : ""
+        });
+      });
     })();
   </script>
   <script src="./mmd.bundle.js"></script>

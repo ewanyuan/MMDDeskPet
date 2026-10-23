@@ -1,0 +1,9 @@
+{
+  "name": "mmd-runtime-harness",
+  "private": true,
+  "type": "module",
+  "description": "Headless Chromium check for the MMD desk pet page and the same-origin model host.",
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

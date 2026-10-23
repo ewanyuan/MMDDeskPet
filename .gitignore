@@ -45,6 +45,11 @@ assets/music/*
 settings.json
 
 # Local diagnostics, captures, generated reports and private notes
+smoke-test-result.json
+smoke-test.png
+tests/runtime-harness/node_modules/
+tests/runtime-harness/output/
+tests/runtime-harness/package-lock.json
 acceptance-*
 diag-*
 menu-*.png
