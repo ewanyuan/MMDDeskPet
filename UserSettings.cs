@@ -19,6 +19,8 @@ internal sealed class UserSettings
 
     public string? LibraryFolder { get; set; }
 
+    public bool LoopMotion { get; set; } = true;
+
     public bool AdultContentEnabled { get; set; }
 }
 

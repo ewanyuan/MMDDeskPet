@@ -85,6 +85,10 @@ public partial class App : System.Windows.Application
         var modelLoaded = false;
         var motionLoaded = false;
         var playbackAdvanced = false;
+        var motionLoop = false;
+        double motionEndFrame = 0;
+        var playbackWrapped = false;
+        var requireWrap = false;
         long loadMs = 0;
         var webview2Version = string.Empty;
         object? transparentWindow = null;
@@ -116,7 +120,7 @@ public partial class App : System.Windows.Application
                         else
                         {
                             chosenModel = ModelLibraryScanner.SelectDefault(library.Models)!.FullPath;
-                            var motion = ModelLibraryScanner.SelectDefault(library.Motions);
+                            var motion = ModelLibraryScanner.SelectDefault(library.Motions, preferLoopName: true);
                             if (string.IsNullOrWhiteSpace(chosenMotion) && motion is not null)
                             {
                                 chosenMotion = motion.FullPath;
@@ -164,7 +168,8 @@ public partial class App : System.Windows.Application
                     await work;
                     passed = modelLoaded
                         && errors.Count == 0
-                        && (string.IsNullOrWhiteSpace(chosenMotion) || (motionLoaded && playbackAdvanced));
+                        && (string.IsNullOrWhiteSpace(chosenMotion)
+                            || (motionLoaded && playbackAdvanced && (!requireWrap || playbackWrapped)));
                 }
             }
         }
@@ -206,7 +211,10 @@ public partial class App : System.Windows.Application
                 webview2Version,
                 transparentWindow,
                 libraryModels,
-                libraryMotions);
+                libraryMotions,
+                motionLoop,
+                motionEndFrame,
+                playbackWrapped);
             try
             {
                 window?.Close();
@@ -233,13 +241,29 @@ public partial class App : System.Windows.Application
             modelLoaded = true;
             if (!string.IsNullOrWhiteSpace(chosenMotion))
             {
-                await smokeWindow.LoadMotionFileAsync(chosenMotion, recordRecent: false);
+                var loadedMotion = await smokeWindow.LoadMotionFileAsync(chosenMotion, recordRecent: false);
                 motionLoaded = true;
+                motionLoop = loadedMotion.TryGetProperty("loop", out var loopElement)
+                    && loopElement.ValueKind == JsonValueKind.True;
+                if (loadedMotion.TryGetProperty("endFrame", out var endElement)
+                    && endElement.TryGetDouble(out var endFrame))
+                {
+                    motionEndFrame = endFrame;
+                }
+
                 stopwatch.Stop();
                 loadMs = stopwatch.ElapsedMilliseconds;
+                var clipSeconds = motionEndFrame > 0 ? motionEndFrame / 30.0 : 0;
+                requireWrap = motionLoop && clipSeconds > 0 && clipSeconds * 2.0 + 1.5 <= 20.0;
+                var waitSeconds = motionLoop && clipSeconds > 0
+                    ? Math.Min(20.0, Math.Max(6.0, clipSeconds * 2.0 + 1.5))
+                    : 6.0;
+                double? previous = null;
                 double? lowest = null;
                 double? highest = null;
-                var until = DateTime.UtcNow.AddSeconds(6);
+                var nearEnd = motionEndFrame - Math.Max(8.0, motionEndFrame * 0.2);
+                var drop = Math.Max(4.0, motionEndFrame * 0.25);
+                var until = DateTime.UtcNow.AddSeconds(waitSeconds);
                 while (DateTime.UtcNow < until && !deadline.IsCancellationRequested)
                 {
                     var frame = await smokeWindow.ReadAnimationFrameAsync();
@@ -250,6 +274,19 @@ public partial class App : System.Windows.Application
                         if (highest.Value - lowest.Value >= 2 || highest.Value >= 3)
                         {
                             playbackAdvanced = true;
+                        }
+
+                        if (previous is double prior
+                            && !playbackWrapped
+                            && prior >= nearEnd
+                            && value < prior - drop)
+                        {
+                            playbackWrapped = true;
+                        }
+
+                        previous = value;
+                        if (playbackAdvanced && (!requireWrap || playbackWrapped))
+                        {
                             break;
                         }
                     }
@@ -260,6 +297,10 @@ public partial class App : System.Windows.Application
                 if (!playbackAdvanced)
                 {
                     errors.Add("Motion playback did not advance by a few frames.");
+                }
+                else if (requireWrap && !playbackWrapped)
+                {
+                    errors.Add("Motion playback did not wrap after the end frame.");
                 }
             }
             else
@@ -304,13 +345,19 @@ public partial class App : System.Windows.Application
         string webview2Version,
         object? transparentWindow,
         int libraryModels = 0,
-        int libraryMotions = 0)
+        int libraryMotions = 0,
+        bool motionLoop = false,
+        double motionEndFrame = 0,
+        bool playbackWrapped = false)
     {
         var payload = new
         {
             modelLoaded,
             motionLoaded,
             playbackAdvanced,
+            motionLoop,
+            motionEndFrame,
+            playbackWrapped,
             loadMs,
             errors,
             webview2Version,

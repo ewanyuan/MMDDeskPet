@@ -124,7 +124,7 @@ internal static class ModelLibraryScanner
         return header.Replace("&", "&&", StringComparison.Ordinal);
     }
 
-    public static LibraryFile? SelectDefault(IReadOnlyList<LibraryFile> files)
+    public static LibraryFile? SelectDefault(IReadOnlyList<LibraryFile> files, bool preferLoopName = false)
     {
         if (files.Count == 0)
         {
@@ -141,10 +141,29 @@ internal static class ModelLibraryScanner
             }
         }
 
+        var preferLoop = false;
+        if (preferLoopName)
+        {
+            foreach (var file in files)
+            {
+                if (string.Equals(DirectoryOf(file.DisplayName), firstFolder, StringComparison.OrdinalIgnoreCase)
+                    && NameContainsLoop(file))
+                {
+                    preferLoop = true;
+                    break;
+                }
+            }
+        }
+
         LibraryFile? selected = null;
         foreach (var file in files)
         {
             if (!string.Equals(DirectoryOf(file.DisplayName), firstFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (preferLoop && !NameContainsLoop(file))
             {
                 continue;
             }
@@ -156,6 +175,11 @@ internal static class ModelLibraryScanner
         }
 
         return selected;
+    }
+
+    private static bool NameContainsLoop(LibraryFile file)
+    {
+        return Path.GetFileName(file.DisplayName).Contains("loop", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void WriteReadmeIfMissing(string directory, string readme)

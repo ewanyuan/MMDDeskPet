@@ -150,49 +150,63 @@ function activeModels() {
 }
 
 function restartLoopIfNeeded() {
-    if (!state.loopCurrentMotion
-      || state.userPauseRequested
-      || state.loopRestarting
-      || !runtime
-      || runtime.isAnimationPlaying) {
-      return;
-    }
+  if (!state.loopCurrentMotion
+    || state.userPauseRequested
+    || state.loopRestarting
+    || !runtime) {
+    return;
+  }
 
-    const duration = state.loopEndFrame > 0
-      ? state.loopEndFrame
-      : runtime.animationFrameTimeDuration;
-    if (!Number.isFinite(duration)
-      || duration <= 0
-      || runtime.currentFrameTime < duration - 0.5) {
-      return;
-    }
+  const duration = state.loopEndFrame > 0
+    ? state.loopEndFrame
+    : runtime.animationFrameTimeDuration;
+  const frame = runtime.currentFrameTime;
+  // Stay on the early frames. Only the last half-frame of the clip wraps,
+  // and a brand-new motion parked at frame 0 must not wrap immediately.
+  if (!Number.isFinite(duration)
+    || duration <= 0
+    || frame < duration * 0.5
+    || frame < duration - 0.5) {
+    return;
+  }
 
-    state.loopRestarting = true;
-    runtime.seekAnimation(0, true)
-      .then(() => runtime.playAnimation())
-      .then(() => {
-        post("motion-looped", {
-          frameTime: runtime.currentFrameTime,
-          duration,
-        });
-      })
-      .catch((error) => {
-        const exception = error instanceof Error ? error : new Error(String(error));
-        post("runtime-error", {
-          operation: "loop-motion",
-          message: exception.message,
-          stack: exception.stack ?? "",
-        });
-      })
-      .finally(() => {
-        state.loopRestarting = false;
+  // beforePhysics clamps the clock and pauses on the end frame. Restart on
+  // the following before-render, after that update, so the pose seeks to the
+  // overflow (usually 0) before the frame is drawn. A playing track shares
+  // this clock: seekAnimation restarts the motion and the audio together.
+  // If that seek fails, stop looping and leave the runtime where it paused.
+  const overflow = Math.max(0, frame - duration);
+  const restartFrame = overflow >= duration ? overflow % duration : overflow;
+  state.loopRestarting = true;
+  runtime.seekAnimation(restartFrame, true)
+    .then(() => {
+      if (!state.loopCurrentMotion || state.userPauseRequested || !runtime) {
+        return undefined;
+      }
+
+      return runtime.playAnimation();
+    })
+    .then(() => {
+      if (!runtime) {
+        return;
+      }
+
+      post("motion-looped", {
+        frameTime: runtime.currentFrameTime,
+        duration,
       });
+    })
+    .catch((error) => {
+      state.loopCurrentMotion = false;
+      const exception = error instanceof Error ? error : new Error(String(error));
+      console.error(`Motion loop did not restart: ${exception.message}`);
+    })
+    .finally(() => {
+      state.loopRestarting = false;
+    });
 }
 
 function installAnimationLoopObserver() {
-  runtime.onPauseAnimationObservable.add(restartLoopIfNeeded);
-  // The pause observable is the normal path. This render-side check is a
-  // fallback for runtimes that finish a short VMD between observable ticks.
   scene.onBeforeRenderObservable.add(restartLoopIfNeeded);
 }
 
@@ -1342,6 +1356,16 @@ window.chrome?.webview?.addEventListener("message", async (event) => {
       case "reset-morphs":
         resetMorphs();
         post("morphs-reset", { requestId: message.requestId });
+        break;
+      case "set-motion-loop":
+        state.loopCurrentMotion = Boolean(message.loop);
+        if (!state.loopCurrentMotion) {
+          state.loopRestarting = false;
+        }
+        post("motion-loop-set", {
+          loop: state.loopCurrentMotion,
+          requestId: message.requestId,
+        });
         break;
       case "play":
         state.userPauseRequested = false;

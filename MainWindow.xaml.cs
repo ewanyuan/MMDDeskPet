@@ -57,6 +57,7 @@ public partial class MainWindow : Window
     private readonly MenuItem _noDanceMenu = new();
     private readonly MenuItem _adultContentToggle = new();
     private readonly MenuItem _pauseDanceMenu = new();
+    private readonly MenuItem _loopMotionMenu = new();
     private readonly MenuItem _appearanceMenu = new();
     private readonly MenuItem _skinToneMenu = new();
     private readonly MenuItem _nakedMenu = new();
@@ -207,6 +208,7 @@ public partial class MainWindow : Window
     private bool _modelHasClothingMorphs;
     private string? _activeModelPath;
     private string? _customMotionPath;
+    private bool _userMotionActive;
     private readonly ExternalFileMap _externalFiles = new();
     private readonly LaunchOptions _launch;
     internal bool SuppressDialogs { get; set; }
@@ -1348,7 +1350,14 @@ public partial class MainWindow : Window
         _pauseDanceMenu.StaysOpenOnClick = true;
         _pauseDanceMenu.Click += OnPauseDanceMenuClick;
         _pauseDanceMenu.IsEnabled = false;
+        _loopMotionMenu.Header = Text("循环播放", "Loop playback");
+        ConfigureMenuItem(_loopMotionMenu);
+        _loopMotionMenu.IsCheckable = true;
+        _loopMotionMenu.IsChecked = _settings.LoopMotion;
+        _loopMotionMenu.StaysOpenOnClick = true;
+        _loopMotionMenu.Click += OnLoopMotionToggleClick;
         _danceMenu.Items.Add(new Separator());
+        _danceMenu.Items.Add(_loopMotionMenu);
         _danceMenu.Items.Add(_pauseDanceMenu);
 
         _eyeExpressionMenu.Header = Text("眼睛表情", "Eye expressions");
@@ -1952,6 +1961,7 @@ public partial class MainWindow : Window
 
             await LoadDanceMusicAsync(dance);
             await PlayAsync();
+            _userMotionActive = false;
             _activeDanceMenuItem = item;
             _pauseDanceMenu.IsEnabled = true;
         }
@@ -1970,6 +1980,29 @@ public partial class MainWindow : Window
         {
             _danceMenu.IsEnabled = true;
             _switchCharacterMenu.IsEnabled = true;
+        }
+    }
+
+    private async void OnLoopMotionToggleClick(object sender, RoutedEventArgs e)
+    {
+        _settings.LoopMotion = _loopMotionMenu.IsChecked == true;
+        UserSettingsStore.Save(_settings);
+        if (!_userMotionActive || !_modelLoaded)
+        {
+            return;
+        }
+
+        try
+        {
+            await SetMotionLoopAsync(_settings.LoopMotion);
+        }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            Trace($"action-superseded:{exception.GetBaseException().Message}");
+        }
+        catch (Exception exception)
+        {
+            ShowActionError(exception);
         }
     }
 
@@ -2643,7 +2676,7 @@ public partial class MainWindow : Window
         return message;
     }
 
-    internal async Task LoadMotionFileAsync(string path, bool recordRecent = true)
+    internal async Task<JsonElement> LoadMotionFileAsync(string path, bool recordRecent = true)
     {
         if (!File.Exists(path))
         {
@@ -2661,7 +2694,7 @@ public partial class MainWindow : Window
             ShowInfo(Text(
                 "请先打开或拖入一个 PMX 模型。这个动作已记在最近使用里。",
                 "Open or drop a PMX model first. This motion was saved to the recent list."));
-            return;
+            return default;
         }
 
         if (_dualMode)
@@ -2676,12 +2709,16 @@ public partial class MainWindow : Window
             }
         }
 
-        var motion = await LoadMotionAsync(Path.GetFileNameWithoutExtension(path), path);
+        var motion = await LoadMotionAsync(
+            Path.GetFileNameWithoutExtension(path),
+            path,
+            loop: _settings.LoopMotion);
         if (motion.GetProperty("boneTracks").GetInt32() <= 0)
         {
             throw new InvalidDataException("The selected VMD contained no bone tracks.");
         }
 
+        _userMotionActive = true;
         await PlayAsync();
         foreach (var danceItem in _danceMenuItems)
         {
@@ -2690,6 +2727,21 @@ public partial class MainWindow : Window
 
         _activeDanceMenuItem = _customMotionMenu;
         _pauseDanceMenu.IsEnabled = true;
+        return motion;
+    }
+
+    private async Task SetMotionLoopAsync(bool loop)
+    {
+        await SendRuntimeRequestAsync(
+            "set-motion-loop",
+            "motion-loop-set",
+            requestId => new
+            {
+                type = "set-motion-loop",
+                loop,
+                requestId,
+            },
+            supersedePreviousLoad: false);
     }
 
     private async Task LoadMusicFileAsync(string path, bool recordRecent = true)
@@ -2716,6 +2768,7 @@ public partial class MainWindow : Window
         _currentCharacter = characterIndex;
         _activeModelPath = path;
         _modelLoaded = true;
+        _userMotionActive = false;
         _usingCustomModel = !IsBundledModelPath(path);
         _dualMode = false;
         Width = SinglePetWidth;
@@ -2731,6 +2784,7 @@ public partial class MainWindow : Window
         _currentCharacter = primaryIndex;
         _activeModelPath = primaryPath;
         _modelLoaded = true;
+        _userMotionActive = false;
         _usingCustomModel = false;
         _dualMode = true;
         Width = DualPetWidth;
@@ -2990,7 +3044,7 @@ public partial class MainWindow : Window
             return false;
         }
 
-        var motion = ModelLibraryScanner.SelectDefault(library.Motions);
+        var motion = ModelLibraryScanner.SelectDefault(library.Motions, preferLoopName: true);
         if (motion is not null)
         {
             Trace($"startup-plan:library-motion:{motion.FullPath}");

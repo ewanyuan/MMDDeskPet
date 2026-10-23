@@ -61,11 +61,11 @@ Rendering and MMD playback use these libraries:
 
 ## 版本 | Status | バージョン
 
-这是早期版本，尚未在真实硬件上测试。
+这是早期版本，已在作者自己的 Windows 电脑上测试。
 
-This is an early version and has not been tested on real hardware.
+This is an early version, tested on the author's own Windows PC.
 
-これは初期バージョンで、実機ではまだテストしていません。
+初期バージョンです。作者の Windows PC で動作確認済み。
 
 ## 许可 | License | ライセンス
 

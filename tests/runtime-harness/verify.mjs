@@ -151,7 +151,7 @@ function buildPmx() {
   ]);
 }
 
-function buildVmd() {
+function buildVmd(endFrame = 180) {
   const signature = Buffer.alloc(30);
   Buffer.from("Vocaloid Motion Data 0002", "ascii").copy(signature);
   const modelName = Buffer.alloc(20);
@@ -176,7 +176,7 @@ function buildVmd() {
   const count = Buffer.alloc(4);
   count.writeUInt32LE(2, 0);
   const morphCount = Buffer.alloc(4);
-  return Buffer.concat([signature, modelName, count, frame(0, 0), frame(180, 0.2), morphCount]);
+  return Buffer.concat([signature, modelName, count, frame(0, 0), frame(endFrame, 0.2), morphCount]);
 }
 
 function writeFixtures() {
@@ -193,6 +193,7 @@ function writeFixtures() {
   fs.writeFileSync(path.join(fixtureRoot, "tex", "肌 色.png"), png);
   fs.writeFileSync(path.join(fixtureRoot, "clothes", "Hime_&_Mikoto.png"), png);
   fs.writeFileSync(path.join(fixtureRoot, "wave.vmd"), buildVmd());
+  fs.writeFileSync(path.join(fixtureRoot, "loop.vmd"), buildVmd(30));
 }
 
 function contentType(filePath) {
@@ -345,7 +346,7 @@ async function main() {
   const xaml = fs.readFileSync(path.join(repoRoot, "MainWindow.xaml"), "utf8");
   record(
     "empty-prompt-markup",
-    xaml.includes("拖入 PMX 开始"),
+    xaml.includes("拖入 PMX，或放进 models 文件夹"),
     "The empty state string lives in the WPF window, which this browser harness cannot paint.",
   );
 
@@ -578,6 +579,62 @@ async function main() {
       `${Date.now() - motionStarted}ms boneTracks=${motion.found.boneTracks} endFrame=${motion.found.endFrame} frames ${firstFrame} -> ${lastFrame}`,
     );
     await page.screenshot({ path: path.join(outputDir, "playback.png") });
+
+    const loopId = "loop-motion-id";
+    const loopStarted = Date.now();
+    await send(page, {
+      type: "load-motion",
+      name: "loop",
+      url: `http://pet.local:${port}/ext/0/loop.vmd`,
+      loop: true,
+      requestId: loopId,
+    });
+    const loopMotion = await waitForMessage(
+      page,
+      (message) => message.type === "motion-loaded" && message.requestId === loopId,
+      8000,
+      "loop motion-loaded",
+    );
+    const loopEndFrame = Number(loopMotion.found.endFrame);
+    await send(page, { type: "play" });
+    const clipMs = (loopEndFrame / 30) * 1000;
+    const loopDeadline = Date.now() + Math.min(20000, clipMs * 2 + 2500);
+    let loopPrevious = null;
+    let loopWrapped = false;
+    let loopAdvancedAfterWrap = false;
+    let loopMaxAfterWrap = 0;
+    const nearEnd = loopEndFrame - Math.max(8, loopEndFrame * 0.2);
+    const drop = Math.max(4, loopEndFrame * 0.25);
+    while (Date.now() < loopDeadline) {
+      const frame = await page.evaluate(() => {
+        const runtime = window.MmdDeskPetRuntime && window.MmdDeskPetRuntime.runtime;
+        const value = runtime && runtime.currentFrameTime;
+        return typeof value === "number" && Number.isFinite(value) ? value : null;
+      });
+      if (typeof frame === "number") {
+        if (loopPrevious !== null
+          && !loopWrapped
+          && loopPrevious >= nearEnd
+          && frame < loopPrevious - drop) {
+          loopWrapped = true;
+          loopMaxAfterWrap = frame;
+        } else if (loopWrapped && frame > loopMaxAfterWrap + 2) {
+          loopAdvancedAfterWrap = true;
+        }
+        loopPrevious = frame;
+      }
+      await page.waitForTimeout(50);
+    }
+    const loopElapsed = Date.now() - loopStarted;
+    record(
+      "motion-loop-wrap",
+      loopMotion.found.loop === true
+        && loopMotion.found.requestId === loopId
+        && loopWrapped
+        && loopAdvancedAfterWrap
+        && loopElapsed >= clipMs * 2 - 200,
+      `${loopElapsed}ms endFrame=${loopEndFrame} wrapped=${loopWrapped} advancedAfterWrap=${loopAdvancedAfterWrap} last=${loopPrevious}`,
+    );
   } finally {
     const report = {
       appRoot,

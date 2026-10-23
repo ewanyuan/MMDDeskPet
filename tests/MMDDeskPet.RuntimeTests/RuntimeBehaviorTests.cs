@@ -284,7 +284,32 @@ public class RuntimeBehaviorTests
             Named("waist-dance/waist-dance-camera.vmd"),
             Named("waist-dance/waist-dance.vmd"),
         };
-        Assert.Equal("waist-dance/waist-dance.vmd", ModelLibraryScanner.SelectDefault(motions)!.DisplayName);
+        Assert.Equal("waist-dance/waist-dance.vmd", ModelLibraryScanner.SelectDefault(motions, preferLoopName: true)!.DisplayName);
+        var loopMotions = new LibraryFile[]
+        {
+            Named("zzz/a.vmd"),
+            Named("waist-dance/waist-dance.vmd"),
+            Named("waist-dance/waist-dance-camera.vmd"),
+            Named("waist-dance/waist-dance-loop.vmd"),
+        };
+        Assert.Equal("waist-dance/waist-dance-loop.vmd", ModelLibraryScanner.SelectDefault(loopMotions, preferLoopName: true)!.DisplayName);
+        Assert.Equal("waist-dance/waist-dance.vmd", ModelLibraryScanner.SelectDefault(loopMotions)!.DisplayName);
+        Assert.Equal(
+            "aaa/plain.vmd",
+            ModelLibraryScanner.SelectDefault(
+            [
+                Named("waist-dance/waist-dance-loop.vmd"),
+                Named("aaa/plain.vmd"),
+            ],
+            preferLoopName: true)!.DisplayName);
+        Assert.Equal(
+            "waist-dance/Loop.vmd",
+            ModelLibraryScanner.SelectDefault(
+            [
+                Named("waist-dance/waist-dance-LOOP-extra.vmd"),
+                Named("waist-dance/Loop.vmd"),
+            ],
+            preferLoopName: true)!.DisplayName);
         Assert.Null(ModelLibraryScanner.SelectDefault([]));
 
         var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-lib-default-" + Guid.NewGuid().ToString("N"));
@@ -303,6 +328,7 @@ public class RuntimeBehaviorTests
 
         File.WriteAllBytes(Path.Combine(later, "a.pmx"), [1]);
         File.WriteAllBytes(Path.Combine(dance, "waist-dance-camera.vmd"), [1]);
+        File.WriteAllBytes(Path.Combine(dance, "waist-dance-loop.vmd"), [1]);
         File.WriteAllBytes(Path.Combine(dance, "waist-dance.vmd"), [1]);
         File.WriteAllBytes(Path.Combine(otherMotion, "a.vmd"), [1]);
 
@@ -321,12 +347,16 @@ public class RuntimeBehaviorTests
             Assert.Equal(
             [
                 "waist-dance/waist-dance-camera.vmd",
+                "waist-dance/waist-dance-loop.vmd",
                 "waist-dance/waist-dance.vmd",
                 "zzz/a.vmd",
             ],
             library.Motions.Select(file => file.DisplayName).ToArray());
             Assert.Equal("Hime_260426/Hime.pmx", ModelLibraryScanner.SelectDefault(library.Models)!.DisplayName);
             Assert.Equal("waist-dance/waist-dance.vmd", ModelLibraryScanner.SelectDefault(library.Motions)!.DisplayName);
+            Assert.Equal(
+                "waist-dance/waist-dance-loop.vmd",
+                ModelLibraryScanner.SelectDefault(library.Motions, preferLoopName: true)!.DisplayName);
         }
         finally
         {
