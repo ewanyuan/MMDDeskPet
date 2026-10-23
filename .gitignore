@@ -29,6 +29,7 @@ assets/music/*
 *.jpg
 *.jpeg
 *.gif
+!docs/demo.gif
 *.tga
 *.bmp
 *.dds

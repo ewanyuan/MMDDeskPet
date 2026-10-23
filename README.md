@@ -6,7 +6,9 @@ No VRM conversion needed. Put your PMX model straight onto the Windows desktop a
 
 VRM への変換は不要です。PMX モデルをそのまま Windows のデスクトップに置き、VMD に合わせて踊らせます。
 
-<!-- demo.gif placeholder. Replace this comment with a real screen recording when one exists. Do not link an image here. -->
+<img src="docs/demo.gif" width="360" alt="MMDDeskPet demo">
+
+Demo model: 公式MMDモデル 雛乃木まや (©雛乃木まや/KAZUYA/金子卵黄), not included in this repo. Motion: original.
 
 ## 快速开始 | Quick start | クイックスタート
 
