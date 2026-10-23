@@ -174,9 +174,14 @@ public partial class MainWindow : Window
             ["AnaOpen"] = "肛部打开",
             ["AnaOpenEX"] = "肛部打开（异物）",
         };
-    private TaskCompletionSource<JsonElement>? _pendingMessage;
-    private string? _pendingMessageType;
-    private string? _pendingRequestId;
+    private readonly object _requestLock = new();
+    private readonly Dictionary<string, PendingRuntimeRequest> _pendingRequests = new(StringComparer.Ordinal);
+    private readonly List<EventWaiter> _eventWaiters = [];
+    private readonly SemaphoreSlim _requestGate = new(1, 1);
+    private PendingRuntimeRequest? _activeLoad;
+    private Task? _initializeTask;
+    private int _startupStarted;
+    private bool _sawPetNavigation;
     private string? _lastRuntimeError;
     private int _currentCharacter;
     private bool _browserInitialized;
@@ -438,33 +443,38 @@ public partial class MainWindow : Window
     internal async Task<JsonElement> LoadDanceMusicAsync(DanceMotionDefinition dance)
     {
         var musicPath = GetDanceMusicPath(dance);
-        var messageType = musicPath is null ? "music-cleared" : "music-loaded";
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync(messageType, requestId);
         if (musicPath is null)
         {
-            PostCommand(new { type = "clear-music", requestId });
-        }
-        else
-        {
-            PostCommand(new
-            {
-                type = "load-music",
-                url = ToRuntimeUrl(musicPath),
-                requestId,
-            });
+            return await SendRuntimeRequestAsync(
+                "clear-music",
+                "music-cleared",
+                requestId => new { type = "clear-music", requestId },
+                supersedePreviousLoad: false);
         }
 
-        return await messageTask;
+        var url = ToRuntimeUrl(musicPath);
+        return await SendRuntimeRequestAsync(
+            "load-music",
+            "music-loaded",
+            requestId => new { type = "load-music", url, requestId },
+            supersedePreviousLoad: false);
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         if (!_autoLoad)
         {
+            Trace("startup-skipped:auto-load-disabled");
             return;
         }
 
+        if (Interlocked.Exchange(ref _startupStarted, 1) != 0)
+        {
+            Trace("startup-skipped:already-started");
+            return;
+        }
+
+        Trace("startup:interactive");
         try
         {
             await InitializeRuntimeAsync();
@@ -510,6 +520,22 @@ public partial class MainWindow : Window
 
             UpdateSwitchCharacterMenu();
             ActivatePetFocus();
+        }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            Trace($"startup-superseded:{exception.GetBaseException().Message}");
+            if (!_modelLoaded)
+            {
+                ShowEmptyHint();
+            }
+        }
+        catch (TimeoutException exception)
+        {
+            Trace($"startup-timeout:{exception.Message}");
+            if (!_modelLoaded)
+            {
+                ShowEmptyHint();
+            }
         }
         catch (Exception exception)
         {
@@ -563,7 +589,15 @@ public partial class MainWindow : Window
             MessageBoxImage.Error);
     }
 
-    public async Task InitializeRuntimeAsync()
+    public Task InitializeRuntimeAsync()
+    {
+        lock (_requestLock)
+        {
+            return _initializeTask ??= InitializeRuntimeCoreAsync();
+        }
+    }
+
+    private async Task InitializeRuntimeCoreAsync()
     {
         Trace("initialize-start");
         if (!_browserInitialized)
@@ -642,17 +676,19 @@ public partial class MainWindow : Window
             throw new FileNotFoundException("The secondary PMX model was not found.", secondaryPath);
         }
 
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("dual-models-loaded", requestId);
-        PostCommand(new
-        {
-            type = "load-secondary-character",
-            primaryIndex,
-            secondaryIndex,
-            secondaryUrl = ToRuntimeUrl(secondaryPath),
-            requestId,
-        });
-        var message = await messageTask;
+        var secondaryUrl = ToRuntimeUrl(secondaryPath);
+        var message = await SendRuntimeRequestAsync(
+            "load-secondary-character",
+            "dual-models-loaded",
+            requestId => new
+            {
+                type = "load-secondary-character",
+                primaryIndex,
+                secondaryIndex,
+                secondaryUrl,
+                requestId,
+            },
+            supersedePreviousLoad: true);
         PopulateMorphMenus(message.GetProperty("primary"));
         MarkDualModelsLoaded(_modelPaths[primaryIndex], primaryIndex);
         await ApplyFullNudeIfNeededAsync();
@@ -666,17 +702,19 @@ public partial class MainWindow : Window
             throw new FileNotFoundException("The VMD motion was not found.", path);
         }
 
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("motion-loaded", requestId);
-        PostCommand(new
-        {
-            type = "load-motion",
-            name,
-            url = ToRuntimeUrl(path),
-            loop,
-            requestId,
-        });
-        return await messageTask;
+        var url = ToRuntimeUrl(path);
+        return await SendRuntimeRequestAsync(
+            "load-motion",
+            "motion-loaded",
+            requestId => new
+            {
+                type = "load-motion",
+                name,
+                url,
+                loop,
+                requestId,
+            },
+            supersedePreviousLoad: true);
     }
 
     public async Task<JsonElement> LoadDualCharactersAsync(int primaryIndex, int secondaryIndex)
@@ -701,18 +739,21 @@ public partial class MainWindow : Window
             throw new FileNotFoundException("The secondary PMX model was not found.", secondaryPath);
         }
 
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("dual-models-loaded", requestId);
-        PostCommand(new
-        {
-            type = "load-dual-character",
-            primaryIndex,
-            primaryUrl = ToRuntimeUrl(primaryPath),
-            secondaryIndex,
-            secondaryUrl = ToRuntimeUrl(secondaryPath),
-            requestId,
-        });
-        var message = await messageTask;
+        var primaryUrl = ToRuntimeUrl(primaryPath);
+        var secondaryUrl = ToRuntimeUrl(secondaryPath);
+        var message = await SendRuntimeRequestAsync(
+            "load-dual-character",
+            "dual-models-loaded",
+            requestId => new
+            {
+                type = "load-dual-character",
+                primaryIndex,
+                primaryUrl,
+                secondaryIndex,
+                secondaryUrl,
+                requestId,
+            },
+            supersedePreviousLoad: true);
         PopulateMorphMenus(message.GetProperty("primary"));
         MarkDualModelsLoaded(primaryPath, primaryIndex);
         await ApplyFullNudeIfNeededAsync();
@@ -734,18 +775,21 @@ public partial class MainWindow : Window
             throw new FileNotFoundException("The secondary VMD motion was not found.", secondaryPath);
         }
 
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("dual-motion-loaded", requestId);
-        PostCommand(new
-        {
-            type = "load-dual-motion",
-            name,
-            primaryUrl = ToRuntimeUrl(primaryPath),
-            secondaryUrl = ToRuntimeUrl(secondaryPath),
-            startFrame,
-            requestId,
-        });
-        return await messageTask;
+        var primaryUrl = ToRuntimeUrl(primaryPath);
+        var secondaryUrl = ToRuntimeUrl(secondaryPath);
+        return await SendRuntimeRequestAsync(
+            "load-dual-motion",
+            "dual-motion-loaded",
+            requestId => new
+            {
+                type = "load-dual-motion",
+                name,
+                primaryUrl,
+                secondaryUrl,
+                startFrame,
+                requestId,
+            },
+            supersedePreviousLoad: true);
     }
 
     internal void BeginDualMotionPreload(DanceMotionDefinition dance)
@@ -799,37 +843,29 @@ public partial class MainWindow : Window
 
     public async Task<JsonElement> SetSkinToneAsync(string tone)
     {
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("skin-tone-updated", requestId);
-        PostCommand(new
-        {
-            type = "set-skin-tone",
-            tone,
-            requestId,
-        });
-        return await messageTask;
+        return await SendRuntimeRequestAsync(
+            "set-skin-tone",
+            "skin-tone-updated",
+            requestId => new { type = "set-skin-tone", tone, requestId },
+            supersedePreviousLoad: false);
     }
 
     public async Task<JsonElement> SetMorphAsync(int index, double weight)
     {
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("morph-updated", requestId);
-        PostCommand(new
-        {
-            type = "set-morph",
-            index,
-            weight,
-            requestId,
-        });
-        return await messageTask;
+        return await SendRuntimeRequestAsync(
+            "set-morph",
+            "morph-updated",
+            requestId => new { type = "set-morph", index, weight, requestId },
+            supersedePreviousLoad: false);
     }
 
     public async Task<JsonElement> ResetMorphsAsync()
     {
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("morphs-reset", requestId);
-        PostCommand(new { type = "reset-morphs", requestId });
-        return await messageTask;
+        return await SendRuntimeRequestAsync(
+            "reset-morphs",
+            "morphs-reset",
+            requestId => new { type = "reset-morphs", requestId },
+            supersedePreviousLoad: false);
     }
 
     public async Task PlayAsync()
@@ -846,7 +882,14 @@ public partial class MainWindow : Window
 
     internal Task<JsonElement> WaitForRuntimeMessageAsync(string type)
     {
-        return WaitForMessageAsync(type);
+        var source = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_requestLock)
+        {
+            _eventWaiters.Add(new EventWaiter(type, source));
+        }
+
+        Trace($"request-start:event:{type}");
+        return source.Task;
     }
 
     public async Task CapturePreviewAsync(string outputPath)
@@ -885,7 +928,28 @@ public partial class MainWindow : Window
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
-        Trace($"navigation:{e.IsSuccess}:{e.WebErrorStatus}");
+        Trace($"navigation:{e.IsSuccess}:{e.WebErrorStatus}:id={e.NavigationId}");
+        if (!e.IsSuccess)
+        {
+            return;
+        }
+
+        var source = Browser.CoreWebView2?.Source ?? string.Empty;
+        if (source.IndexOf(AppVirtualHost, StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            Trace($"navigation-ignored:{source}");
+            return;
+        }
+
+        if (_sawPetNavigation)
+        {
+            Trace("navigation-repeat");
+            CancelPendingRequests("navigation-reset");
+            return;
+        }
+
+        _sawPetNavigation = true;
+        Trace("navigation-ready");
     }
 
     private void OnProcessFailed(object? sender, CoreWebView2ProcessFailedEventArgs e)
@@ -931,10 +995,7 @@ public partial class MainWindow : Window
                 Trace($"runtime-error:{_lastRuntimeError}");
                 var exception = new InvalidOperationException(_lastRuntimeError);
                 _runtimeReady.TrySetException(exception);
-                if (PendingRequestMatches(root))
-                {
-                    _pendingMessage?.TrySetException(exception);
-                }
+                FailRequestsFromRuntimeError(root, exception);
                 return;
             }
 
@@ -944,62 +1005,239 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (string.Equals(type, _pendingMessageType, StringComparison.Ordinal)
-                && PendingRequestMatches(root))
+            if (!TryCompletePendingRequest(type, root))
             {
-                _pendingMessage?.TrySetResult(root.Clone());
+                TryCompleteEventWaiter(type, root);
             }
         }
         catch (Exception exception)
         {
             _lastRuntimeError = exception.ToString();
-            if (_pendingMessage is not null)
-            {
-                _pendingMessage?.TrySetException(exception);
-            }
+            Trace($"message-parse-failure:{exception.GetBaseException().Message}");
+            CancelPendingRequests("message-parse-failure");
         }
     }
 
     private static string NewRequestId() => Guid.NewGuid().ToString("N");
 
-    private bool PendingRequestMatches(JsonElement root)
+    private async Task<JsonElement> SendRuntimeRequestAsync(
+        string operation,
+        string responseType,
+        Func<string, object> commandFactory,
+        bool supersedePreviousLoad)
     {
-        if (_pendingMessage is null || _pendingRequestId is null)
+        if (supersedePreviousLoad)
         {
-            return true;
+            SupersedeActiveLoad(operation);
         }
 
-        return root.TryGetProperty("requestId", out var requestIdElement)
-            && string.Equals(
-                requestIdElement.GetString(),
-                _pendingRequestId,
-                StringComparison.Ordinal);
-    }
-
-    private async Task<JsonElement> WaitForMessageAsync(string type, string? requestId = null)
-    {
-        if (_pendingMessage != null)
-        {
-            throw new InvalidOperationException("Another MMD runtime request is already pending.");
-        }
-
-        var source = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingMessage = source;
-        _pendingMessageType = type;
-        _pendingRequestId = requestId;
+        await _requestGate.WaitAsync();
+        var request = new PendingRuntimeRequest(NewRequestId(), operation, responseType, supersedePreviousLoad);
         try
         {
-            return await source.Task.WaitAsync(TimeSpan.FromSeconds(60));
+            lock (_requestLock)
+            {
+                _pendingRequests[request.RequestId] = request;
+                if (supersedePreviousLoad)
+                {
+                    _activeLoad = request;
+                }
+            }
+
+            Trace($"request-start:{operation}:{request.RequestId}");
+            PostCommand(commandFactory(request.RequestId));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, request.Cancel.Token);
+            try
+            {
+                var result = await request.Completion.Task.WaitAsync(linked.Token);
+                Trace($"request-finish:{operation}:{request.RequestId}");
+                return result;
+            }
+            catch (OperationCanceledException) when (request.Superseded)
+            {
+                Trace($"request-superseded:{operation}:{request.RequestId}:{request.CancelReason}");
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                Trace($"request-timeout:{operation}:{request.RequestId}");
+                throw new TimeoutException($"The MMD runtime did not finish {operation} within 30 seconds.");
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not TimeoutException)
+        {
+            Trace($"request-failure:{operation}:{request.RequestId}:{exception.GetBaseException().Message}");
+            throw;
         }
         finally
         {
-            if (ReferenceEquals(_pendingMessage, source))
+            lock (_requestLock)
             {
-                _pendingMessage = null;
-                _pendingMessageType = null;
-                _pendingRequestId = null;
+                if (_pendingRequests.TryGetValue(request.RequestId, out var current)
+                    && ReferenceEquals(current, request))
+                {
+                    _pendingRequests.Remove(request.RequestId);
+                }
+
+                if (ReferenceEquals(_activeLoad, request))
+                {
+                    _activeLoad = null;
+                }
+            }
+
+            request.Cancel.Dispose();
+            _requestGate.Release();
+        }
+    }
+
+    private void SupersedeActiveLoad(string nextOperation)
+    {
+        PendingRuntimeRequest? previous;
+        lock (_requestLock)
+        {
+            previous = _activeLoad;
+            if (previous is null)
+            {
+                return;
+            }
+
+            previous.Superseded = true;
+            previous.CancelReason = "superseded-by-" + nextOperation;
+            _pendingRequests.Remove(previous.RequestId);
+            _activeLoad = null;
+        }
+
+        SignalRequestCancelled(previous);
+    }
+
+    private void CancelPendingRequests(string reason)
+    {
+        List<PendingRuntimeRequest> pending;
+        List<EventWaiter> events;
+        lock (_requestLock)
+        {
+            pending = _pendingRequests.Values.ToList();
+            events = _eventWaiters.ToList();
+            _pendingRequests.Clear();
+            _eventWaiters.Clear();
+            _activeLoad = null;
+        }
+
+        Trace($"request-cancel-all:{reason}:{pending.Count}");
+        foreach (var request in pending)
+        {
+            request.Superseded = true;
+            request.CancelReason = reason;
+            SignalRequestCancelled(request);
+        }
+
+        foreach (var waiter in events)
+        {
+            waiter.Completion.TrySetException(new OperationCanceledException(reason));
+        }
+    }
+
+    private static void SignalRequestCancelled(PendingRuntimeRequest request)
+    {
+        request.Completion.TrySetException(new OperationCanceledException(request.CancelReason ?? "cancelled"));
+        try
+        {
+            request.Cancel.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The waiter already left and disposed its cancellation source.
+        }
+    }
+
+    private bool TryCompletePendingRequest(string type, JsonElement root)
+    {
+        if (!root.TryGetProperty("requestId", out var requestIdElement))
+        {
+            return false;
+        }
+
+        var requestId = requestIdElement.GetString();
+        if (string.IsNullOrWhiteSpace(requestId))
+        {
+            return false;
+        }
+
+        PendingRuntimeRequest? request;
+        lock (_requestLock)
+        {
+            if (!_pendingRequests.TryGetValue(requestId, out request)
+                || !string.Equals(request.ResponseType, type, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            _pendingRequests.Remove(requestId);
+        }
+
+        return request.Completion.TrySetResult(root.Clone());
+    }
+
+    private void FailRequestsFromRuntimeError(JsonElement root, Exception exception)
+    {
+        var requestId = root.TryGetProperty("requestId", out var requestIdElement)
+            ? requestIdElement.GetString()
+            : null;
+        List<PendingRuntimeRequest> failed = [];
+        lock (_requestLock)
+        {
+            if (!string.IsNullOrWhiteSpace(requestId)
+                && _pendingRequests.TryGetValue(requestId, out var match))
+            {
+                _pendingRequests.Remove(requestId);
+                if (ReferenceEquals(_activeLoad, match))
+                {
+                    _activeLoad = null;
+                }
+
+                failed.Add(match);
+            }
+            else if (string.IsNullOrWhiteSpace(requestId) && _pendingRequests.Count > 0)
+            {
+                failed.AddRange(_pendingRequests.Values);
+                _pendingRequests.Clear();
+                _activeLoad = null;
             }
         }
+
+        foreach (var request in failed)
+        {
+            request.Completion.TrySetException(exception);
+        }
+    }
+
+    private void TryCompleteEventWaiter(string type, JsonElement root)
+    {
+        EventWaiter? waiter = null;
+        lock (_requestLock)
+        {
+            var index = _eventWaiters.FindIndex(item =>
+                string.Equals(item.Type, type, StringComparison.Ordinal));
+            if (index >= 0)
+            {
+                waiter = _eventWaiters[index];
+                _eventWaiters.RemoveAt(index);
+            }
+        }
+
+        if (waiter is null)
+        {
+            return;
+        }
+
+        Trace($"request-finish:event:{type}");
+        waiter.Completion.TrySetResult(root.Clone());
+    }
+
+    private static bool IsSuperseded(Exception exception)
+    {
+        return exception.GetBaseException() is OperationCanceledException;
     }
 
     private void PostCommand(object command)
@@ -1782,6 +2020,7 @@ public partial class MainWindow : Window
     {
         Trace("closed");
         _closing = true;
+        CancelPendingRequests("window-closed");
         _petMenu.IsOpen = false;
         if (Browser is IDisposable disposable)
         {
@@ -2243,16 +2482,18 @@ public partial class MainWindow : Window
         }
 
         var index = characterIndex ?? CharacterIndexForPath(path);
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("model-loaded", requestId);
-        PostCommand(new
-        {
-            type = "load-character",
-            index,
-            url = ToRuntimeUrl(path),
-            requestId,
-        });
-        var message = await messageTask;
+        var url = ToRuntimeUrl(path);
+        var message = await SendRuntimeRequestAsync(
+            "load-character",
+            "model-loaded",
+            requestId => new
+            {
+                type = "load-character",
+                index,
+                url,
+                requestId,
+            },
+            supersedePreviousLoad: true);
         PopulateMorphMenus(message);
         MarkSingleModelLoaded(path, index);
         if (recordRecent)
@@ -2320,15 +2561,12 @@ public partial class MainWindow : Window
             throw new FileNotFoundException("The music file was not found.", path);
         }
 
-        var requestId = NewRequestId();
-        var messageTask = WaitForMessageAsync("music-loaded", requestId);
-        PostCommand(new
-        {
-            type = "load-music",
-            url = ToRuntimeUrl(path),
-            requestId,
-        });
-        await messageTask;
+        var url = ToRuntimeUrl(path);
+        await SendRuntimeRequestAsync(
+            "load-music",
+            "music-loaded",
+            requestId => new { type = "load-music", url, requestId },
+            supersedePreviousLoad: false);
         if (recordRecent)
         {
             RememberMusic(path);
@@ -2537,6 +2775,10 @@ public partial class MainWindow : Window
         {
             await action();
         }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            Trace($"action-superseded:{exception.GetBaseException().Message}");
+        }
         catch (Exception exception)
         {
             ShowActionError(exception);
@@ -2597,6 +2839,10 @@ public partial class MainWindow : Window
             {
                 await LoadMusicFileAsync(music);
             }
+        }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            Trace($"action-superseded:{exception.GetBaseException().Message}");
         }
         catch (Exception exception)
         {
@@ -2736,6 +2982,13 @@ public partial class MainWindow : Window
 
     private void ShowActionError(Exception exception)
     {
+        if (IsSuperseded(exception)
+            || exception.GetBaseException().Message.Contains("already pending", StringComparison.OrdinalIgnoreCase))
+        {
+            Trace($"action-pending-suppressed:{exception.GetBaseException().Message}");
+            return;
+        }
+
         _lastRuntimeError = exception.ToString();
         Trace($"action-failure:{exception}");
         MessageBox.Show(
@@ -2833,5 +3086,39 @@ public partial class MainWindow : Window
         return File.Exists(Path.Combine(directory, "MMDDeskPet.exe"))
             || File.Exists(Path.Combine(directory, "HimeMikotoDesktopNative.exe"))
             || File.Exists(Path.Combine(directory, "使用说明.txt"));
+    }
+
+    private sealed class PendingRuntimeRequest
+    {
+        public PendingRuntimeRequest(string requestId, string operation, string responseType, bool load)
+        {
+            RequestId = requestId;
+            Operation = operation;
+            ResponseType = responseType;
+            Load = load;
+        }
+
+        public string RequestId { get; }
+
+        public string Operation { get; }
+
+        public string ResponseType { get; }
+
+        public bool Load { get; }
+
+        public TaskCompletionSource<JsonElement> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public CancellationTokenSource Cancel { get; } = new();
+
+        public bool Superseded { get; set; }
+
+        public string? CancelReason { get; set; }
+    }
+
+    private sealed class EventWaiter(string type, TaskCompletionSource<JsonElement> completion)
+    {
+        public string Type { get; } = type;
+
+        public TaskCompletionSource<JsonElement> Completion { get; } = completion;
     }
 }

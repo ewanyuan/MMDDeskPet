@@ -272,7 +272,28 @@ async function loadMusic(url, requestId) {
   });
 }
 
-async function initializeMmdRuntime() {
+let runtimeInitializePromise = null;
+let loadSerial = 0;
+
+function initializeMmdRuntime() {
+  if (runtimeInitializePromise) {
+    return runtimeInitializePromise;
+  }
+
+  runtimeInitializePromise = initializeMmdRuntimeOnce();
+  return runtimeInitializePromise;
+}
+
+function beginSupersedingLoad() {
+  loadSerial += 1;
+  return loadSerial;
+}
+
+function isCurrentLoad(serial) {
+  return serial === loadSerial;
+}
+
+async function initializeMmdRuntimeOnce() {
   const wasmInstanceType = new MmdWasmInstanceTypeSPR();
   const wasmBindgen = wasmInstanceType.getWasmInstanceInner();
   const wasmInstance = await GetMmdWasmInstance({
@@ -640,9 +661,15 @@ async function loadCharacter(index, url, requestId) {
     throw new Error("The MMD runtime is still initializing.");
   }
 
+  const serial = beginSupersedingLoad();
   disposeCurrentModel();
 
   const loaded = await loadCharacterAsset(index, url);
+  if (!isCurrentLoad(serial)) {
+    disposeLoadedCharacter(loaded);
+    return;
+  }
+
   state.container = loaded.container;
   state.model = loaded.model;
   state.modelIndex = index;
@@ -651,6 +678,10 @@ async function loadCharacter(index, url, requestId) {
   startBlink(loaded.metadata.morphs.map((morph, morphIndex) => ({ ...morph, index: morphIndex })));
 
   await new Promise((resolve) => requestAnimationFrame(resolve));
+  if (!isCurrentLoad(serial)) {
+    return;
+  }
+
   post("model-loaded", { ...describeLoadedCharacter(loaded), requestId });
 }
 
@@ -659,11 +690,16 @@ async function loadMotion(name, url, loop = false, requestId) {
     throw new Error("Load a character before loading a motion.");
   }
 
+  const serial = beginSupersedingLoad();
   state.loopCurrentMotion = false;
   state.loopEndFrame = 0;
   state.userPauseRequested = false;
   runtime.pauseAnimation();
   const loadedMotion = await loadCachedMotion(name, url);
+  if (!isCurrentLoad(serial)) {
+    return;
+  }
+
   const { motion, rootOffset, visibilityTrackNormalized } = loadedMotion;
   if (state.motionHandle) {
     state.model.destroyRuntimeAnimation(state.motionHandle);
@@ -673,6 +709,10 @@ async function loadMotion(name, url, loop = false, requestId) {
   state.model.setRuntimeAnimation(state.motionHandle);
   runtime.setManualAnimationDuration(motion.endFrame);
   await runtime.seekAnimation(0, true);
+  if (!isCurrentLoad(serial)) {
+    return;
+  }
+
   state.loopEndFrame = motion.endFrame;
   state.loopCurrentMotion = Boolean(loop);
   post("motion-loaded", {
@@ -693,15 +733,27 @@ async function loadDualCharacters(primaryIndex, primaryUrl, secondaryIndex, seco
     throw new Error("The MMD runtime is still initializing.");
   }
 
+  const serial = beginSupersedingLoad();
   disposeCurrentModel();
 
   const primary = await loadCharacterAsset(primaryIndex, primaryUrl);
+  if (!isCurrentLoad(serial)) {
+    disposeLoadedCharacter(primary);
+    return;
+  }
+
   let secondary;
   try {
     secondary = await loadCharacterAsset(secondaryIndex, secondaryUrl);
   } catch (error) {
     disposeLoadedCharacter(primary);
     throw error;
+  }
+
+  if (!isCurrentLoad(serial)) {
+    disposeLoadedCharacter(primary);
+    disposeLoadedCharacter(secondary);
+    return;
   }
 
   // The Womanizer VMD contains two authored roles. Keep the two models in a
@@ -725,6 +777,10 @@ async function loadDualCharacters(primaryIndex, primaryUrl, secondaryIndex, seco
   startBlink(primary.metadata.morphs.map((morph, morphIndex) => ({ ...morph, index: morphIndex })));
 
   await new Promise((resolve) => requestAnimationFrame(resolve));
+  if (!isCurrentLoad(serial)) {
+    return;
+  }
+
   post("dual-models-loaded", {
     primary: describeLoadedCharacter(primary),
     secondary: describeLoadedCharacter(secondary),
@@ -740,6 +796,7 @@ async function loadSecondaryCharacter(primaryIndex, secondaryIndex, secondaryUrl
     throw new Error("The requested primary character is not loaded.");
   }
 
+  const serial = beginSupersedingLoad();
   const normalizedSecondaryUrl = normalizeModelUrl(secondaryUrl);
   if (state.secondaryModel && state.secondaryModelIndex === secondaryIndex
       && state.secondaryModelUrl === normalizedSecondaryUrl) {
@@ -783,6 +840,13 @@ async function loadSecondaryCharacter(primaryIndex, secondaryIndex, secondaryUrl
     : preloadInProgress
       ? await state.secondaryPreloadPromise
       : await loadCharacterAsset(secondaryIndex, normalizedSecondaryUrl);
+  if (!isCurrentLoad(serial)) {
+    if (secondary && state.preloadedSecondary !== secondary) {
+      disposeLoadedCharacter(secondary);
+    }
+    return;
+  }
+
   if (!secondary) {
     throw new Error("The secondary character preload did not produce a model.");
   }
@@ -816,6 +880,10 @@ async function loadSecondaryCharacter(primaryIndex, secondaryIndex, secondaryUrl
     ], 1.72);
 
     await new Promise((resolve) => requestAnimationFrame(resolve));
+    if (!isCurrentLoad(serial)) {
+      return;
+    }
+
     post("dual-models-loaded", {
       primary: describeActiveCharacter(state.modelIndex, state.modelUrl, state.container, state.model),
       secondary: describeLoadedCharacter(secondary),
@@ -880,6 +948,7 @@ async function loadDualMotion(name, primaryUrl, secondaryUrl, startFrame = 0, re
     throw new Error("Load the two characters before loading a dual motion.");
   }
 
+  const serial = beginSupersedingLoad();
   state.loopCurrentMotion = false;
   state.loopEndFrame = 0;
   state.userPauseRequested = false;
@@ -900,6 +969,10 @@ async function loadDualMotion(name, primaryUrl, secondaryUrl, startFrame = 0, re
     rootOffset: secondaryRootOffset,
     visibilityTrackNormalized: secondaryVisibilityTrackNormalized,
   } = secondaryLoaded;
+
+  if (!isCurrentLoad(serial)) {
+    return;
+  }
 
   if (state.model !== primaryModelAtStart || state.secondaryModel !== secondaryModelAtStart) {
     throw new Error("The active characters changed while loading the dual motion.");
@@ -926,6 +999,10 @@ async function loadDualMotion(name, primaryUrl, secondaryUrl, startFrame = 0, re
   );
   runtime.setManualAnimationDuration(duration);
   await runtime.seekAnimation(playbackStartFrame, true);
+  if (!isCurrentLoad(serial) || state.model !== primaryModelAtStart || state.secondaryModel !== secondaryModelAtStart) {
+    return;
+  }
+
   post("dual-motion-loaded", {
     name,
     primaryUrl: normalizeModelUrl(primaryUrl),

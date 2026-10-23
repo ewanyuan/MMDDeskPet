@@ -10,6 +10,8 @@ public partial class App : System.Windows.Application
 {
     private async void OnStartup(object sender, StartupEventArgs e)
     {
+        // The runtime self-test loads bundled models and writes captures.
+        // A normal launch must not enter it.
         if (e.Args.Any(argument => argument.Equals("--mmd-runtime-self-test", StringComparison.OrdinalIgnoreCase)))
         {
             var passed = await RunMmdRuntimeSelfTestAsync();
