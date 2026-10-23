@@ -1,13 +1,11 @@
 param(
-    [string]$OutputDirectory = "",
-    [switch]$IncludeLocalPrivateAssets
+    [string]$OutputDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $toolDirectory = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $projectDirectory = Split-Path -Parent $toolDirectory
-$repositoryDirectory = Split-Path -Parent $projectDirectory
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $projectDirectory "dist/portable"
 }
@@ -50,61 +48,22 @@ if ($LASTEXITCODE -ne 0) {
     throw "The self-contained desktop pet publish failed."
 }
 
-$packageAssetsDirectory = Join-Path $OutputDirectory "assets"
-$creditsSource = Join-Path $projectDirectory "assets/motions/MOTION-CREDITS.md"
-$creditsDestination = Join-Path $packageAssetsDirectory "motions/MOTION-CREDITS.md"
-New-Item -ItemType Directory -Path (Split-Path -Parent $creditsDestination) -Force | Out-Null
-Copy-Item -LiteralPath $creditsSource -Destination $creditsDestination -Force
+$publishedAssets = Join-Path $OutputDirectory "assets"
+if (Test-Path -LiteralPath $publishedAssets) {
+    Remove-Item -LiteralPath $publishedAssets -Recurse -Force
+}
 
 $defaultSource = Join-Path $projectDirectory "assets/default"
 if (-not (Test-Path -LiteralPath $defaultSource)) {
     throw "The bundled default assets were not found: $defaultSource"
 }
-Copy-Item -LiteralPath $defaultSource -Destination (Join-Path $packageAssetsDirectory "default") -Recurse -Force
+Copy-Item -LiteralPath $defaultSource -Destination (Join-Path $OutputDirectory "assets/default") -Recurse -Force
 
-# Default packaging copies no PMX, VMD, music, or textures.
-# -IncludeLocalPrivateAssets is opt-in and reads a local private model folder
-# that is not part of this repository.
-if ($IncludeLocalPrivateAssets) {
-    $modelsSource = Join-Path $repositoryDirectory "HimeMikotoDesktop/assets/Hime_&_Mikoto"
-    $modelsDestination = Join-Path $packageAssetsDirectory "Hime_&_Mikoto"
-    if (-not (Test-Path -LiteralPath $modelsSource)) {
-        throw "The local model directory was not found: $modelsSource"
-    }
-    Copy-Item -LiteralPath $modelsSource -Destination $modelsDestination -Recurse -Force
-
-    $motionsSource = Join-Path $projectDirectory "assets/motions"
-    $motionsDestination = Join-Path $packageAssetsDirectory "motions"
-    New-Item -ItemType Directory -Path $motionsDestination -Force | Out-Null
-    Get-ChildItem -LiteralPath $motionsSource -Force | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $motionsDestination $_.Name) -Recurse -Force
-    }
-
-    $musicSource = Join-Path $projectDirectory "assets/music"
-    if (Test-Path -LiteralPath $musicSource) {
-        Copy-Item -LiteralPath $musicSource -Destination (Join-Path $packageAssetsDirectory "music") -Recurse -Force
-    }
+$licenseSource = Join-Path $projectDirectory "LICENSE"
+if (-not (Test-Path -LiteralPath $licenseSource)) {
+    throw "The repository LICENSE was not found: $licenseSource"
 }
-
-if (-not $IncludeLocalPrivateAssets) {
-    $outputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path.TrimEnd('\', '/')
-    $forbidden = Get-ChildItem -LiteralPath $OutputDirectory -Recurse -File |
-        Where-Object {
-            $extension = $_.Extension.ToLowerInvariant()
-            $blocked = $extension -in @(".pmx", ".pmd", ".vmd", ".vpd", ".tga", ".dds", ".spa", ".sph", ".bmp")
-            if (-not $blocked) {
-                return $false
-            }
-
-            $relative = $_.FullName.Substring($outputRoot.Length).TrimStart('\', '/').Replace('\', '/')
-            $bundledDefault = $relative.StartsWith("assets/default/") -and $extension -in @(".pmx", ".vmd")
-            return -not $bundledDefault
-        }
-    if ($forbidden) {
-        $names = $forbidden | ForEach-Object { $_.FullName }
-        throw "Refusing to pack third-party model, motion, or texture files without -IncludeLocalPrivateAssets:`n$($names -join "`n")"
-    }
-}
+Copy-Item -LiteralPath $licenseSource -Destination (Join-Path $OutputDirectory "LICENSE") -Force
 
 $packageReadme = @"
 MMD Desk Pet
@@ -162,6 +121,34 @@ foreach ($libraryFolder in @(
     $directory = Join-Path $OutputDirectory $libraryFolder.Name
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $directory "README.txt") -Value $libraryFolder.Readme -Encoding utf8
+}
+
+$outputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path.TrimEnd('\', '/')
+$rejected = @()
+Get-ChildItem -LiteralPath $OutputDirectory -Recurse -File | ForEach-Object {
+    $relative = $_.FullName.Substring($outputRoot.Length).TrimStart('\', '/').Replace('\', '/')
+    $allowed = $false
+    if ($relative -in @("LICENSE", "使用说明.txt", "models/README.txt", "motions/README.txt", "music/README.txt")) {
+        $allowed = $true
+    } elseif ($relative.StartsWith("web/") -or $relative.StartsWith("assets/default/")) {
+        $allowed = $true
+    } elseif ($relative -notmatch "/") {
+        $extension = $_.Extension.ToLowerInvariant()
+        if ($extension -in @(".exe", ".dll", ".json", ".xml", ".config")) {
+            $allowed = $true
+        }
+    } elseif ($relative -match '^[a-z]{2}(-[A-Za-z]+)?/[^/]+\.resources\.dll$') {
+        $allowed = $true
+    } elseif ($relative -match '^runtimes/[^/]+/native/[^/]+\.dll$') {
+        $allowed = $true
+    }
+
+    if (-not $allowed) {
+        $rejected += $relative
+    }
+}
+if ($rejected.Count -gt 0) {
+    throw "The package contains files outside the public allowlist:`n$($rejected -join "`n")"
 }
 
 $zipPath = "$OutputDirectory.zip"

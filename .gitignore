@@ -14,9 +14,7 @@ web/mmd-spr.wasm
 # Third-party model, motion, music, texture, and other asset binaries.
 # These are never part of the public source tree. The desktop pet loads
 # whatever PMX / VMD the user picks from disk.
-assets/Hime_&_Mikoto/
 assets/motions/*
-!assets/motions/MOTION-CREDITS.md
 assets/music/*
 *.pmx
 *.pmd

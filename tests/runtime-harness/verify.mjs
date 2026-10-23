@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 const appRoot = process.argv[2] ? path.resolve(process.argv[2]) : repoRoot;
 const outputDir = path.join(here, "output");
-const fixtureRoot = path.join(outputDir, "fixtures", "Hime_&_Mikoto");
+const fixtureRoot = path.join(outputDir, "fixtures", "Model_&_Sample");
 
 const checks = [];
 
@@ -82,7 +82,7 @@ function buildPmx() {
   const textures = Buffer.concat([
     i32(2),
     text("tex/肌 色.png"),
-    text("clothes/Hime_&_Mikoto.png"),
+    text("clothes/Model_&_Sample.png"),
   ]);
   const material = Buffer.concat([
     i32(1),
@@ -189,9 +189,9 @@ function writeFixtures() {
     "base64",
   );
   fs.writeFileSync(path.join(fixtureRoot, "desk pet.pmx"), pmx);
-  fs.writeFileSync(path.join(fixtureRoot, "Mikoto.physics-stable.pmx"), pmx);
+  fs.writeFileSync(path.join(fixtureRoot, "sample.physics-stable.pmx"), pmx);
   fs.writeFileSync(path.join(fixtureRoot, "tex", "肌 色.png"), png);
-  fs.writeFileSync(path.join(fixtureRoot, "clothes", "Hime_&_Mikoto.png"), png);
+  fs.writeFileSync(path.join(fixtureRoot, "clothes", "Model_&_Sample.png"), png);
   fs.writeFileSync(path.join(fixtureRoot, "wave.vmd"), buildVmd());
   fs.writeFileSync(path.join(fixtureRoot, "loop.vmd"), buildVmd(30));
 }
@@ -419,7 +419,7 @@ async function main() {
     await send(page, {
       type: "load-character",
       index: 0,
-      url: `http://ext0.local:${port}/Mikoto.physics-stable.pmx`,
+      url: `http://ext0.local:${port}/sample.physics-stable.pmx`,
       requestId: crossId,
     });
     const cross = await waitForMessage(
@@ -523,7 +523,7 @@ async function main() {
     const model = loaded.found;
     const textureHits = seen.filter((entry) => entry.host === "pet.local" && entry.path.startsWith("/ext/0/"));
     const sawSkin = textureHits.some((entry) => entry.path.includes("肌 色.png"));
-    const sawOutfit = textureHits.some((entry) => entry.path.includes("Hime_&_Mikoto.png"));
+    const sawOutfit = textureHits.some((entry) => entry.path.includes("Model_&_Sample.png"));
     const sawSpace = textureHits.some((entry) => entry.path.includes("desk pet.pmx"));
     record(
       "load-character",

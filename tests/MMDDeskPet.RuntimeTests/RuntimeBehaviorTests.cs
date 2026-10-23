@@ -45,7 +45,7 @@ public class RuntimeBehaviorTests
         var load = gate.Begin("load-character", "model-loaded", supersedePreviousLoad: true);
         var other = gate.Begin("set-morph", "morph-updated", supersedePreviousLoad: false);
         var error = new InvalidOperationException(
-            "Unable to load from https://ext0.local/Mikoto.physics-stable.pmx: LoadFileError: Error status: 0");
+            "Unable to load from https://ext0.local/sample.physics-stable.pmx: LoadFileError: Error status: 0");
 
         var failed = gate.FailByRuntimeError(load.RequestId, error);
 
@@ -143,17 +143,17 @@ public class RuntimeBehaviorTests
     {
         var spaced = RuntimeAssetUrls.ForExternalFile("0", "desk pet.pmx");
         var nested = RuntimeAssetUrls.ForExternalFile("0", @"tex\肌 色.png");
-        var ampersand = RuntimeAssetUrls.ForExternalFile("0", "clothes/Hime_&_Mikoto.png");
+        var ampersand = RuntimeAssetUrls.ForExternalFile("0", "clothes/Model_&_Sample.png");
 
         Assert.Equal("https://pet.local/ext/0/desk%20pet.pmx", spaced);
         Assert.Equal("https://pet.local/ext/0/tex/%E8%82%8C%20%E8%89%B2.png", nested);
-        Assert.Equal("https://pet.local/ext/0/clothes/Hime_%26_Mikoto.png", ampersand);
+        Assert.Equal("https://pet.local/ext/0/clothes/Model_%26_Sample.png", ampersand);
         Assert.DoesNotContain("ext0.local", spaced, StringComparison.Ordinal);
         Assert.DoesNotContain("ext0.local", nested, StringComparison.Ordinal);
 
         AssertRoundTrip(spaced, "0", "desk pet.pmx");
         AssertRoundTrip(nested, "0", "tex/肌 色.png");
-        AssertRoundTrip(ampersand, "0", "clothes/Hime_&_Mikoto.png");
+        AssertRoundTrip(ampersand, "0", "clothes/Model_&_Sample.png");
         Assert.False(RuntimeAssetUrls.TryReadExternal("/ext/0/../secret.pmx", out _, out _));
         Assert.Equal("https://pet.local/web/index.html", RuntimeAssetUrls.ForAppFile("web/index.html"));
     }
@@ -161,12 +161,12 @@ public class RuntimeBehaviorTests
     [Fact]
     public void ExternalMapResolvesTexturesUnderFoldersWithAmpersands()
     {
-        var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-url-" + Guid.NewGuid().ToString("N"), "Hime_&_Mikoto");
+        var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-url-" + Guid.NewGuid().ToString("N"), "Model_&_Sample");
         Directory.CreateDirectory(Path.Combine(root, "tex"));
         Directory.CreateDirectory(Path.Combine(root, "clothes"));
         var model = Path.Combine(root, "desk pet.pmx");
         var skin = Path.Combine(root, "tex", "肌 色.png");
-        var outfit = Path.Combine(root, "clothes", "Hime_&_Mikoto.png");
+        var outfit = Path.Combine(root, "clothes", "Model_&_Sample.png");
         File.WriteAllBytes(model, [1]);
         File.WriteAllBytes(skin, [2]);
         File.WriteAllBytes(outfit, [3]);
@@ -181,7 +181,7 @@ public class RuntimeBehaviorTests
 
             Assert.True(map.TryResolve(new Uri(modelUrl).AbsolutePath, out var resolvedModel));
             Assert.True(map.TryResolve(new Uri(RuntimeAssetUrls.ForExternalFile(token, "tex/肌 色.png")).AbsolutePath, out var resolvedSkin));
-            Assert.True(map.TryResolve(new Uri(RuntimeAssetUrls.ForExternalFile(token, "clothes/Hime_&_Mikoto.png")).AbsolutePath, out var resolvedOutfit));
+            Assert.True(map.TryResolve(new Uri(RuntimeAssetUrls.ForExternalFile(token, "clothes/Model_&_Sample.png")).AbsolutePath, out var resolvedOutfit));
             Assert.Equal(Path.GetFullPath(model), resolvedModel);
             Assert.Equal(Path.GetFullPath(skin), resolvedSkin);
             Assert.Equal(Path.GetFullPath(outfit), resolvedOutfit);
@@ -207,11 +207,11 @@ public class RuntimeBehaviorTests
     public void LaunchOptionsParseSmokeArguments()
     {
         Assert.True(LaunchOptions.TryParse(
-            ["--model", @"C:\models\Hime_&_Mikoto\desk pet.pmx", @"--motion=C:\motions\dance.vmd", "--smoke-test", "--exit-after", "45"],
+            ["--model", @"C:\models\Model_&_Sample\desk pet.pmx", @"--motion=C:\motions\dance.vmd", "--smoke-test", "--exit-after", "45"],
             out var options,
             out var error));
         Assert.Null(error);
-        Assert.Equal(@"C:\models\Hime_&_Mikoto\desk pet.pmx", options.ModelPath);
+        Assert.Equal(@"C:\models\Model_&_Sample\desk pet.pmx", options.ModelPath);
         Assert.Equal(@"C:\motions\dance.vmd", options.MotionPath);
         Assert.True(options.SmokeTest);
         Assert.Equal(45, options.ExitAfterSeconds);
@@ -223,11 +223,11 @@ public class RuntimeBehaviorTests
         Assert.Contains("--exit-after", badSeconds, StringComparison.Ordinal);
 
         Assert.True(LaunchOptions.TryParse(
-            ["--library", @"D:\pet lib\Hime_&_Mikoto", "--smoke-test"],
+            ["--library", @"D:\pet lib\Model_&_Sample", "--smoke-test"],
             out var libraryOptions,
             out var libraryError));
         Assert.Null(libraryError);
-        Assert.Equal(@"D:\pet lib\Hime_&_Mikoto", libraryOptions.LibraryFolder);
+        Assert.Equal(@"D:\pet lib\Model_&_Sample", libraryOptions.LibraryFolder);
         Assert.True(libraryOptions.SmokeTest);
         Assert.Null(libraryOptions.ModelPath);
 
@@ -244,12 +244,12 @@ public class RuntimeBehaviorTests
         var models = Path.Combine(root, "models");
         var deep = Path.Combine(models, "a", "b", "c", "d");
         var tooDeep = Path.Combine(deep, "e");
-        var hime = Path.Combine(models, "Hime_&_Mikoto");
+        var sampleFolder = Path.Combine(models, "Model_&_Sample");
         var spaced = Path.Combine(models, "b folder");
         Directory.CreateDirectory(Path.Combine(models, "A"));
         Directory.CreateDirectory(deep);
         Directory.CreateDirectory(tooDeep);
-        Directory.CreateDirectory(hime);
+        Directory.CreateDirectory(sampleFolder);
         Directory.CreateDirectory(spaced);
         Directory.CreateDirectory(Path.Combine(root, "motions", "sub"));
         Directory.CreateDirectory(Path.Combine(root, "music"));
@@ -257,8 +257,8 @@ public class RuntimeBehaviorTests
         File.WriteAllText(Path.Combine(models, "README.txt"), "do not list");
         File.WriteAllBytes(Path.Combine(models, "zeta.pmx"), [1]);
         File.WriteAllBytes(Path.Combine(models, "A", "Upper.PMX"), [1]);
-        File.WriteAllBytes(Path.Combine(hime, "Hime.physics-stable.pmx"), [2]);
-        File.WriteAllBytes(Path.Combine(hime, "初音 ミク.pmx"), [3]);
+        File.WriteAllBytes(Path.Combine(sampleFolder, "main.physics-stable.pmx"), [2]);
+        File.WriteAllBytes(Path.Combine(sampleFolder, "見本 甲.pmx"), [3]);
         File.WriteAllBytes(Path.Combine(deep, "deep.pmx"), [4]);
         File.WriteAllBytes(Path.Combine(tooDeep, "too-deep.pmx"), [5]);
         File.WriteAllBytes(Path.Combine(spaced, "second.pmx"), [6]);
@@ -279,12 +279,12 @@ public class RuntimeBehaviorTests
                 "A/Upper.PMX",
                 "a/b/c/d/deep.pmx",
                 "b folder/second.pmx",
-                "Hime_&_Mikoto/Hime.physics-stable.pmx",
-                "Hime_&_Mikoto/初音 ミク.pmx",
+                "Model_&_Sample/main.physics-stable.pmx",
+                "Model_&_Sample/見本 甲.pmx",
             ],
             library.Models.Select(file => file.DisplayName).ToArray());
-            Assert.Contains(library.Models, file => file.DisplayName.Contains("Hime_&_Mikoto", StringComparison.Ordinal));
-            Assert.Contains(library.Models, file => file.DisplayName.Contains("初音 ミク", StringComparison.Ordinal));
+            Assert.Contains(library.Models, file => file.DisplayName.Contains("Model_&_Sample", StringComparison.Ordinal));
+            Assert.Contains(library.Models, file => file.DisplayName.Contains("見本 甲", StringComparison.Ordinal));
             Assert.Contains(library.Models, file => file.DisplayName.Contains("physics-stable", StringComparison.Ordinal));
             Assert.DoesNotContain(library.Models, file => file.DisplayName.Contains("too-deep", StringComparison.Ordinal));
             Assert.DoesNotContain(library.Models, file => file.DisplayName.Contains("README", StringComparison.Ordinal));
@@ -297,8 +297,8 @@ public class RuntimeBehaviorTests
                 ["clip.ogg", "song.mp3", "tone.wav"],
                 library.Music.Select(file => file.DisplayName).ToArray());
             Assert.Equal(
-                "Hime_&&_Mikoto/初音 ミク.pmx",
-                ModelLibraryScanner.EscapeMenuHeader("Hime_&_Mikoto/初音 ミク.pmx"));
+                "Model_&&_Sample/見本 甲.pmx",
+                ModelLibraryScanner.EscapeMenuHeader("Model_&_Sample/見本 甲.pmx"));
         }
         finally
         {
@@ -312,12 +312,12 @@ public class RuntimeBehaviorTests
         var models = new LibraryFile[]
         {
             Named("Zzz/a.pmx"),
-            Named("Hime_260426/Hime.physics-max.pmx"),
-            Named("Hime_260426/Hime.pmx"),
-            Named("Hime_260426/Hime.physics-stable.pmx"),
-            Named("Hime_260426/Hime.physics-balanced.pmx"),
+            Named("Set_260426/main.physics-max.pmx"),
+            Named("Set_260426/main.pmx"),
+            Named("Set_260426/main.physics-stable.pmx"),
+            Named("Set_260426/main.physics-balanced.pmx"),
         };
-        Assert.Equal("Hime_260426/Hime.pmx", ModelLibraryScanner.SelectDefault(models)!.DisplayName);
+        Assert.Equal("Set_260426/main.pmx", ModelLibraryScanner.SelectDefault(models)!.DisplayName);
 
         var sameLength = new LibraryFile[]
         {
@@ -362,17 +362,17 @@ public class RuntimeBehaviorTests
         Assert.Null(ModelLibraryScanner.SelectDefault([]));
 
         var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-lib-default-" + Guid.NewGuid().ToString("N"));
-        var hime = Path.Combine(root, "models", "Hime_260426");
+        var sampleFolder = Path.Combine(root, "models", "Set_260426");
         var later = Path.Combine(root, "models", "Zzz");
         var dance = Path.Combine(root, "motions", "waist-dance");
         var otherMotion = Path.Combine(root, "motions", "zzz");
-        Directory.CreateDirectory(hime);
+        Directory.CreateDirectory(sampleFolder);
         Directory.CreateDirectory(later);
         Directory.CreateDirectory(dance);
         Directory.CreateDirectory(otherMotion);
-        foreach (var name in new[] { "Hime.physics-balanced.pmx", "Hime.physics-max.pmx", "Hime.physics-stable.pmx", "Hime.pmx" })
+        foreach (var name in new[] { "main.physics-balanced.pmx", "main.physics-max.pmx", "main.physics-stable.pmx", "main.pmx" })
         {
-            File.WriteAllBytes(Path.Combine(hime, name), [1]);
+            File.WriteAllBytes(Path.Combine(sampleFolder, name), [1]);
         }
 
         File.WriteAllBytes(Path.Combine(later, "a.pmx"), [1]);
@@ -386,10 +386,10 @@ public class RuntimeBehaviorTests
             var library = ModelLibraryScanner.Scan(root);
             Assert.Equal(
             [
-                "Hime_260426/Hime.physics-balanced.pmx",
-                "Hime_260426/Hime.physics-max.pmx",
-                "Hime_260426/Hime.physics-stable.pmx",
-                "Hime_260426/Hime.pmx",
+                "Set_260426/main.physics-balanced.pmx",
+                "Set_260426/main.physics-max.pmx",
+                "Set_260426/main.physics-stable.pmx",
+                "Set_260426/main.pmx",
                 "Zzz/a.pmx",
             ],
             library.Models.Select(file => file.DisplayName).ToArray());
@@ -401,7 +401,7 @@ public class RuntimeBehaviorTests
                 "zzz/a.vmd",
             ],
             library.Motions.Select(file => file.DisplayName).ToArray());
-            Assert.Equal("Hime_260426/Hime.pmx", ModelLibraryScanner.SelectDefault(library.Models)!.DisplayName);
+            Assert.Equal("Set_260426/main.pmx", ModelLibraryScanner.SelectDefault(library.Models)!.DisplayName);
             Assert.Equal("waist-dance/waist-dance.vmd", ModelLibraryScanner.SelectDefault(library.Motions)!.DisplayName);
             Assert.Equal(
                 "waist-dance/waist-dance-loop.vmd",
@@ -469,12 +469,12 @@ public class RuntimeBehaviorTests
         Assert.Equal("web/index.html", index);
         Assert.True(RuntimeAssetUrls.TryReadAppRelative("/web/mmd-spr.wasm", out var wasm));
         Assert.Equal("web/mmd-spr.wasm", wasm);
-        Assert.False(RuntimeAssetUrls.TryReadAppRelative("/ext/0/Hime.pmx", out _));
+        Assert.False(RuntimeAssetUrls.TryReadAppRelative("/ext/0/main.pmx", out _));
         Assert.False(RuntimeAssetUrls.TryReadAppRelative("/web/../../secret.txt", out _));
         Assert.Equal("application/wasm", RuntimeAssetUrls.ContentTypeFor("mmd-spr.wasm"));
         Assert.Equal("text/javascript", RuntimeAssetUrls.ContentTypeFor("mmd.bundle.js"));
         Assert.Equal("text/html", RuntimeAssetUrls.ContentTypeFor("index.html"));
-        Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("Hime.pmx"));
+        Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("main.pmx"));
         Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("wave.vmd"));
         Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("cloth.spa"));
         Assert.Equal("application/octet-stream", RuntimeAssetUrls.ContentTypeFor("cloth.sph"));
@@ -494,7 +494,7 @@ public class RuntimeBehaviorTests
     {
         var root = Path.Combine(Path.GetTempPath(), "mmddeskpet-large-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        var model = Path.Combine(root, "Hime.pmx");
+        var model = Path.Combine(root, "main.pmx");
         const long size = 20L * 1024 * 1024;
         using (var created = new FileStream(model, FileMode.Create, FileAccess.Write, FileShare.Read))
         {
@@ -506,7 +506,7 @@ public class RuntimeBehaviorTests
             var map = new ExternalFileMap();
             var url = map.UrlForFile(model, out var token, out _);
             Assert.Equal("0", token);
-            Assert.Equal("https://pet.local/ext/0/Hime.pmx", url);
+            Assert.Equal("https://pet.local/ext/0/main.pmx", url);
             Assert.True(map.TryResolve(new Uri(url).AbsolutePath, out var resolved));
             using var stream = new FileStream(
                 resolved,

@@ -437,13 +437,6 @@ function normalizeMorphName(value) {
     .replace(/\s+/g, "");
 }
 
-function isFullNudeMorphName(value) {
-  const normalized = normalizeMorphName(value);
-  return normalized.includes("全裸")
-    || normalized.includes("naked")
-    || normalized.includes("nude");
-}
-
 function findMatchingMorphIndex(morphs, sourceMorph) {
   const sourceNames = [sourceMorph?.name, sourceMorph?.englishName]
     .map(normalizeMorphName)
@@ -458,13 +451,6 @@ function findMatchingMorphIndex(morphs, sourceMorph) {
   });
   if (exactIndex >= 0) {
     return exactIndex;
-  }
-
-  // Some PMX files localize the same full-nude morph differently. Keep this
-  // fallback narrow so unrelated morphs are never changed accidentally.
-  if (sourceNames.some(isFullNudeMorphName)) {
-    return morphs.findIndex((morph) =>
-      isFullNudeMorphName(morph?.name) || isFullNudeMorphName(morph?.englishName));
   }
 
   return -1;
@@ -770,9 +756,7 @@ async function loadDualCharacters(primaryIndex, primaryUrl, secondaryIndex, seco
     return;
   }
 
-  // The Womanizer VMD contains two authored roles. Keep the two models in a
-  // compact side-by-side arrangement because there is no MMD stage camera in
-  // the floating-pet presentation.
+  // Keep two models side by side. The floating pet has no MMD stage camera.
   primary.rootMesh.position.x = -2.05;
   secondary.rootMesh.position.x = 2.05;
 

@@ -400,7 +400,13 @@ public partial class App : System.Windows.Application
             await window.InitializeRuntimeAsync();
             window.UseOpaqueCaptureBackgroundForTest();
             await window.SetSkinToneAsync("brighter");
-            var hime = await window.LoadCharacterAsync(0);
+            var modelPath = Path.Combine(window.RepositoryRoot, StartupModelPolicy.BundledModelRelativePath);
+            if (!File.Exists(modelPath))
+            {
+                throw new FileNotFoundException("The bundled default model was not found.", modelPath);
+            }
+
+            var model = await window.LoadModelFileAsync(modelPath, recordRecent: false);
             await window.ResetMorphsAsync();
             await Task.Delay(150);
 
@@ -408,7 +414,7 @@ public partial class App : System.Windows.Application
             await window.CapturePreviewAsync(baselinePath);
 
             var results = new List<object>();
-            foreach (var morph in hime.GetProperty("morphs").EnumerateArray())
+            foreach (var morph in model.GetProperty("morphs").EnumerateArray())
             {
                 var category = morph.GetProperty("category").GetInt32();
                 var name = morph.GetProperty("name").GetString() ?? string.Empty;
@@ -559,313 +565,30 @@ public partial class App : System.Windows.Application
             }
             window.UseOpaqueCaptureBackgroundForTest();
 
-            var hime = await window.LoadCharacterAsync(0);
-            File.AppendAllText(tracePath, "after-hime" + Environment.NewLine);
-            ValidateModel(hime, expectedIndex: 0);
-            File.WriteAllText(
-                Path.Combine(outputDirectory, "mmd-runtime-hime-morphs-debug.json"),
-                hime.GetProperty("morphs").GetRawText());
-            foreach (var tone in new[] { "brighter", "lighter", "deep" })
+            var modelPath = Path.Combine(window.RepositoryRoot, StartupModelPolicy.BundledModelRelativePath);
+            var motionPath = Path.Combine(window.RepositoryRoot, StartupModelPolicy.BundledMotionRelativePath);
+            if (!File.Exists(modelPath) || !File.Exists(motionPath))
             {
-                await window.SetSkinToneAsync(tone);
-                await Task.Delay(100);
-                await window.CapturePreviewAsync(
-                    Path.Combine(outputDirectory, $"mmd-runtime-hime-tone-{tone}.png"));
-            }
-            await window.SetSkinToneAsync("brighter");
-
-            var himeNakedIndex = FindMorphIndex(hime, "全裸");
-            if (himeNakedIndex < 0)
-            {
-                throw new InvalidDataException("The bundled primary model did not expose the 全裸 morph for persistence testing.");
+                throw new FileNotFoundException("The bundled default model or motion was not found.");
             }
 
-            var eyeExpressionIndex = -1;
-            var mouthExpressionIndex = -1;
-            foreach (var morph in hime.GetProperty("morphs").EnumerateArray())
+            var model = await window.LoadModelFileAsync(modelPath, recordRecent: false);
+            File.AppendAllText(tracePath, "after-default-model" + Environment.NewLine);
+            ValidateModel(model, expectedIndex: 0);
+            var motion = await window.LoadMotionFileAsync(motionPath, recordRecent: false, loop: true);
+            if (motion.GetProperty("boneTracks").GetInt32() <= 0)
             {
-                var candidateIndex = morph.GetProperty("index").GetInt32();
-                if (candidateIndex == himeNakedIndex)
-                {
-                    continue;
-                }
-
-                if (eyeExpressionIndex < 0 && window.IsCuratedEyeMorphForTest(candidateIndex))
-                {
-                    eyeExpressionIndex = candidateIndex;
-                }
-
-                if (mouthExpressionIndex < 0 && window.IsCuratedMouthMorphForTest(candidateIndex))
-                {
-                    mouthExpressionIndex = candidateIndex;
-                }
-
-                if (eyeExpressionIndex >= 0 && mouthExpressionIndex >= 0)
-                {
-                    break;
-                }
-            }
-
-            if (eyeExpressionIndex < 0 || mouthExpressionIndex < 0)
-            {
-                throw new InvalidDataException("The bundled primary model did not expose both eye and mouth expression morphs.");
-            }
-
-            await window.SelectMorphForTestAsync(himeNakedIndex);
-            await window.SelectMorphForTestAsync(eyeExpressionIndex);
-            await window.SelectMorphForTestAsync(mouthExpressionIndex);
-            if (window.ActiveEyeExpressionCountForTest != 1
-                || window.ActiveEyeExpressionIndexForTest != eyeExpressionIndex
-                || window.ActiveMouthExpressionCountForTest != 1
-                || window.ActiveMouthExpressionIndexForTest != mouthExpressionIndex)
-            {
-                throw new InvalidDataException("Eye and mouth expression submenus did not allow one active choice each.");
-            }
-
-            var secondEyeExpressionIndex = hime.GetProperty("morphs")
-                .EnumerateArray()
-                .Select(morph => morph.GetProperty("index").GetInt32())
-                .FirstOrDefault(candidateIndex =>
-                    candidateIndex != himeNakedIndex
-                    && candidateIndex != eyeExpressionIndex
-                    && window.IsCuratedEyeMorphForTest(candidateIndex));
-            if (secondEyeExpressionIndex <= 0)
-            {
-                throw new InvalidDataException("The bundled primary model did not expose a second curated eye expression morph.");
-            }
-
-            await window.SelectMorphForTestAsync(secondEyeExpressionIndex);
-            if (window.ActiveEyeExpressionCountForTest != 1
-                || window.ActiveEyeExpressionIndexForTest != secondEyeExpressionIndex
-                || window.ActiveMouthExpressionIndexForTest != mouthExpressionIndex)
-            {
-                throw new InvalidDataException("Eye expression radio choices did not replace only the previous eye expression.");
-            }
-
-            await window.SelectMorphForTestAsync(eyeExpressionIndex);
-            if (window.ActiveEyeExpressionCountForTest != 1
-                || window.ActiveEyeExpressionIndexForTest != eyeExpressionIndex
-                || window.ActiveMouthExpressionIndexForTest != mouthExpressionIndex)
-            {
-                throw new InvalidDataException("Eye expression radio choices did not switch back while keeping the mouth expression.");
-            }
-
-            if (!window.FullNudeActiveForTest)
-            {
-                throw new InvalidDataException("The full-nude state was lost after applying an expression morph.");
-            }
-
-            await window.LoadCharacterAsync(1);
-            if (!window.FullNudeActiveForTest)
-            {
-                throw new InvalidDataException("The full-nude state was lost while switching characters.");
-            }
-
-            await window.ClearMorphStateForTestAsync();
-            await window.LoadCharacterAsync(0);
-
-            var testMorph = hime.GetProperty("morphs")
-                .EnumerateArray()
-                .FirstOrDefault(morph => morph.GetProperty("type").GetInt32() is 1 or 8);
-            if (testMorph.ValueKind == System.Text.Json.JsonValueKind.Undefined)
-            {
-                testMorph = hime.GetProperty("morphs").EnumerateArray().First();
-            }
-
-            await window.SetMorphAsync(testMorph.GetProperty("index").GetInt32(), 1.0);
-            await window.ResetMorphsAsync();
-            File.AppendAllText(tracePath, "after-morph" + Environment.NewLine);
-            await Task.Delay(250);
-            await window.CapturePreviewAsync(Path.Combine(outputDirectory, "mmd-runtime-hime.png"));
-            File.AppendAllText(tracePath, "after-hime-capture" + Environment.NewLine);
-
-            var mikoto = await window.LoadCharacterAsync(1);
-            File.AppendAllText(tracePath, "after-mikoto" + Environment.NewLine);
-            ValidateModel(mikoto, expectedIndex: 1);
-            await Task.Delay(250);
-            await window.CapturePreviewAsync(Path.Combine(outputDirectory, "mmd-runtime-mikoto.png"));
-            File.AppendAllText(tracePath, "after-mikoto-capture" + Environment.NewLine);
-
-            var nakedMorph = mikoto.GetProperty("morphs")
-                .EnumerateArray()
-                .FirstOrDefault(morph =>
-                    (morph.GetProperty("name").GetString() ?? string.Empty).Contains("全裸", StringComparison.Ordinal));
-            if (nakedMorph.ValueKind != System.Text.Json.JsonValueKind.Undefined)
-            {
-                await window.SetMorphAsync(nakedMorph.GetProperty("index").GetInt32(), 1.0);
-                await Task.Delay(250);
-                await window.CapturePreviewAsync(Path.Combine(outputDirectory, "mmd-runtime-mikoto-naked-tone.png"));
-                await window.ResetMorphsAsync();
-                File.AppendAllText(tracePath, "after-mikoto-naked-tone-capture" + Environment.NewLine);
-            }
-
-            await window.LoadCharacterAsync(0);
-            var preloadProbe = window.DanceMotions.FirstOrDefault(dance => dance.Key == "erotic-hip-duo");
-            if (preloadProbe is not null
-                && File.Exists(window.GetDanceMotionPath(preloadProbe))
-                && window.GetSecondaryDanceMotionPath(preloadProbe) is { } preloadSecondaryPath
-                && File.Exists(preloadSecondaryPath))
-            {
-                File.AppendAllText(tracePath, "before-incremental-dual" + Environment.NewLine);
-                window.BeginSecondaryCharacterPreload(0, 1);
-                window.BeginDualMotionPreload(preloadProbe);
-                var incrementalDualModels = await window.LoadSecondaryCharacterAsync(0, 1);
-                ValidateModel(incrementalDualModels.GetProperty("primary"), expectedIndex: 0);
-                ValidateModel(incrementalDualModels.GetProperty("secondary"), expectedIndex: 1);
-                File.AppendAllText(tracePath, "after-incremental-dual" + Environment.NewLine);
-            }
-
-            foreach (var dance in window.DanceMotions)
-            {
-                var motionPath = window.GetDanceMotionPath(dance);
-                if (!File.Exists(motionPath))
-                {
-                    File.AppendAllText(tracePath, $"skip-motion:{dance.Key}" + Environment.NewLine);
-                    continue;
-                }
-
-                JsonElement motion;
-                if (dance.IsDual)
-                {
-                    var secondaryPath = window.GetSecondaryDanceMotionPath(dance)
-                        ?? throw new InvalidDataException("The dual dance has no secondary VMD path.");
-                    if (!File.Exists(secondaryPath))
-                    {
-                        File.AppendAllText(tracePath, $"skip-motion:{dance.Key}:secondary" + Environment.NewLine);
-                        continue;
-                    }
-
-                    var dualModels = await window.LoadDualCharactersAsync(0, 1);
-                    ValidateModel(dualModels.GetProperty("primary"), expectedIndex: 0);
-                    ValidateModel(dualModels.GetProperty("secondary"), expectedIndex: 1);
-
-                    var dualNakedMorph = FindMorphIndex(dualModels.GetProperty("primary"), "全裸");
-                    if (dualNakedMorph < 0)
-                    {
-                        throw new InvalidDataException("The dual primary model did not expose the 全裸 morph.");
-                    }
-
-                    var dualNakedResult = await window.SetMorphAsync(dualNakedMorph, 1.0);
-                    if (!dualNakedResult.TryGetProperty("appliedModelCount", out var appliedModelCount)
-                        || appliedModelCount.GetInt32() < 2)
-                    {
-                        throw new InvalidDataException(
-                            $"The dual 全裸 morph did not reach both models: {dualNakedResult}");
-                    }
-
-                    await Task.Delay(250);
-                    var dualNakedPreviewPath = Path.Combine(
-                        outputDirectory,
-                        "mmd-runtime-womanizer-dual-naked.png");
-                    await window.CapturePreviewAsync(dualNakedPreviewPath);
-                    ValidatePreview(dualNakedPreviewPath, "womanizer-dual-naked");
-                    await window.ResetMorphsAsync();
-                    File.AppendAllText(tracePath, "after-dual-naked" + Environment.NewLine);
-
-                    motion = await window.LoadDualMotionAsync(
-                        dance.Key,
-                        motionPath,
-                        secondaryPath,
-                        dance.StartFrame);
-                    if (motion.GetProperty("primaryBoneTracks").GetInt32() <= 0
-                        || motion.GetProperty("secondaryBoneTracks").GetInt32() <= 0)
-                    {
-                        throw new InvalidDataException($"The dual VMD contained no bone tracks: {dance.Key}.");
-                    }
-                    if (motion.GetProperty("startFrame").GetInt32() != dance.StartFrame)
-                    {
-                        throw new InvalidDataException($"The dual VMD did not start at the requested frame: {dance.Key}.");
-                    }
-                }
-                else
-                {
-                    await window.LoadCharacterAsync(0);
-                    motion = await window.LoadMotionAsync(dance.Key, motionPath, dance.Loop);
-                    if (motion.GetProperty("boneTracks").GetInt32() <= 0)
-                    {
-                        throw new InvalidDataException($"The VMD contained no bone tracks: {dance.Key}.");
-                    }
-                }
-
-                var music = await window.LoadDanceMusicAsync(dance);
-                var musicEnabled = music.GetProperty("enabled").GetBoolean();
-                if (window.GetDanceMusicPath(dance) is null && musicEnabled)
-                {
-                    throw new InvalidDataException($"Music was unexpectedly enabled: {dance.Key}.");
-                }
-                if (window.GetDanceMusicPath(dance) is not null && !musicEnabled)
-                {
-                    throw new InvalidDataException($"The available music did not load: {dance.Key}.");
-                }
-
-                File.AppendAllText(tracePath, $"after-motion:{dance.Key}" + Environment.NewLine);
-
-                Task<JsonElement>? loopTask = null;
-                if (dance.Loop)
-                {
-                    if (!motion.TryGetProperty("loop", out var loopProperty)
-                        || !loopProperty.GetBoolean())
-                    {
-                        throw new InvalidDataException($"The motion was not marked for looping: {dance.Key}.");
-                    }
-
-                    loopTask = window.WaitForRuntimeMessageAsync("motion-looped");
-                }
-
-                await window.PlayAsync();
-                await Task.Delay(700);
-                var previewPath = Path.Combine(outputDirectory, $"mmd-runtime-dance-{dance.Key}.png");
-                await window.CapturePreviewAsync(previewPath);
-                ValidatePreview(previewPath, dance.Key);
-                if (loopTask is not null)
-                {
-                    var loopTimeout = Math.Max(
-                        5.0,
-                        motion.GetProperty("endFrame").GetDouble() / 30.0 + 3.0);
-                    await loopTask.WaitAsync(TimeSpan.FromSeconds(loopTimeout));
-                    File.AppendAllText(tracePath, $"after-loop:{dance.Key}" + Environment.NewLine);
-                }
-                await window.PauseAsync();
-                await window.ResetMorphsAsync();
-            }
-
-            var rustVeins = window.DanceMotions.First(dance => dance.Key == "rust-veins");
-            await window.LoadCharacterAsync(1);
-            var rustMotionMikoto = await window.LoadMotionAsync(
-                rustVeins.Key,
-                window.GetDanceMotionPath(rustVeins));
-            if (rustMotionMikoto.GetProperty("boneTracks").GetInt32() <= 0)
-            {
-                throw new InvalidDataException("The Rust Veins VMD did not load on the bundled secondary model.");
+                throw new InvalidDataException("The bundled default motion contained no bone tracks.");
             }
 
             await window.PlayAsync();
             await Task.Delay(700);
-            var rustMikotoPreviewPath = Path.Combine(
-                outputDirectory,
-                "mmd-runtime-dance-rust-veins-mikoto.png");
-            await window.CapturePreviewAsync(rustMikotoPreviewPath);
-            ValidatePreview(rustMikotoPreviewPath, "rust-veins-mikoto");
+            var previewPath = Path.Combine(outputDirectory, "mmd-runtime-default.png");
+            await window.CapturePreviewAsync(previewPath);
+            ValidatePreview(previewPath, "default");
             await window.PauseAsync();
             await window.ResetMorphsAsync();
-
-            var snowHalation = window.DanceMotions.First(dance => dance.Key == "snow-halation");
-            var snowMotion = await window.LoadMotionAsync(
-                snowHalation.Key,
-                window.GetDanceMotionPath(snowHalation));
-            if (snowMotion.GetProperty("boneTracks").GetInt32() <= 0)
-            {
-                throw new InvalidDataException("The Snow Halation VMD contained no bone tracks.");
-            }
-
-            await window.PlayAsync();
-            await Task.Delay(700);
-            await window.CapturePreviewAsync(Path.Combine(outputDirectory, "mmd-runtime-hime-motion.png"));
-            File.AppendAllText(tracePath, "after-motion-capture" + Environment.NewLine);
-            window.UseTransparentCaptureBackgroundForTest();
-            await Task.Delay(150);
-            await window.CapturePreviewAsync(Path.Combine(outputDirectory, "mmd-runtime-hime-transparent.png"));
-            File.AppendAllText(tracePath, "after-transparent-capture" + Environment.NewLine);
+            File.AppendAllText(tracePath, "after-default-motion" + Environment.NewLine);
             return true;
         }
         catch (Exception exception)
@@ -903,24 +626,6 @@ public partial class App : System.Windows.Application
         {
             throw new InvalidDataException("The PMX did not enable its native rigid-body physics data.");
         }
-    }
-
-    private static int FindMorphIndex(JsonElement model, string name)
-    {
-        foreach (var morph in model.GetProperty("morphs").EnumerateArray())
-        {
-            var morphName = morph.GetProperty("name").GetString() ?? string.Empty;
-            if (string.Equals(
-                    morphName,
-                    name,
-                    StringComparison.Ordinal)
-                || morphName.Contains(name, StringComparison.OrdinalIgnoreCase))
-            {
-                return morph.GetProperty("index").GetInt32();
-            }
-        }
-
-        return -1;
     }
 
     private static void ValidatePreview(string path, string label)

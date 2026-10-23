@@ -26,17 +26,11 @@ Windows 10/11 x64 と Microsoft Edge WebView2 Runtime。
 
 ## 素材与内容 | Assets and content | 素材と内容
 
-除了下一节的默认模型和舞蹈，本程序不附带其他模型、动作或音乐。请只使用你有权使用的素材，并遵守原作者的条款。许多动作禁止再分发，也禁止 R18 使用。
+除了下一节的默认模型和舞蹈，本程序不附带其他模型、动作或音乐。请只使用你有权使用的素材，并遵守原作者的条款。这是公开的全年龄版本。
 
-Aside from the default model and dance in the next section, this program ships with no other models, motions, or music. Use assets you have rights to, and follow the original authors' terms. Many motions forbid redistribution or R18 use.
+Aside from the default model and dance in the next section, this program ships with no other models, motions, or music. Use assets you have rights to, and follow the original authors' terms. This is the public all-ages version.
 
-次の節の既定モデルとダンス以外に、モデル、モーション、音楽は同梱していません。権利のある素材だけを使い、原作者の利用条件に従ってください。多くのモーションは再配布や R18 での使用を禁止しています。
-
-程序带有一个可选的成人向表情菜单，默认关闭。未满 18 岁不要开启。
-
-The program includes an optional adult-oriented morph menu. It is off by default. People under 18 should not enable it.
-
-成人向けのモーフメニューを任意で備えています。初期状態ではオフです。18歳未満の方は有効にしないでください。
+次の節の既定モデルとダンス以外に、モデル、モーション、音楽は同梱していません。権利のある素材だけを使い、原作者の利用条件に従ってください。これは公開用の全年齢版です。
 
 ## 随包素材 | Bundled assets | 同梱素材
 
