@@ -1,6 +1,7 @@
 mmddeskpet_groove_20s.vmd
 Original motion by Ewan Yuan.
-CC0 1.0 https://creativecommons.org/publicdomain/zero/1.0/
+CC0 1.0 by Ewan Yuan
+https://creativecommons.org/publicdomain/zero/1.0/
 
 stand.vmd
 Idle motion from CG-CA Uka. Unmodified.
