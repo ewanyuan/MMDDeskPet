@@ -2,13 +2,13 @@
 
 无需转换成 VRM。让 PMX 模型在电脑桌面上跟着 VMD 跳舞。
 
-No VRM conversion needed. Put your PMX model straight onto the Windows desktop and have it dance to VMD.
+No VRM conversion needed. Let your PMX model dance on your desktop.
 
-VRM への変換は不要です。PMX モデルをそのまま Windows のデスクトップに置き、VMD に合わせて踊らせます。
+VRM への変換は不要です。PMX モデルをデスクトップ上で踊らせます。
 
 <img src="docs/demo.gif" width="360" alt="MMDDeskPet demo">
 
-Demo model: 公式MMDモデル 雛乃木まや (©雛乃木まや/KAZUYA/金子卵黄), not included in this repo. Motion: original.
+Demo: the bundled default model Uka dancing the bundled groove motion (`mmddeskpet_groove_20s.vmd`, [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)). Model: `CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society`, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## 快速开始 | Quick start | クイックスタート
 
