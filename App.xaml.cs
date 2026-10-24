@@ -32,6 +32,11 @@ public partial class App : System.Windows.Application
             throw new ArgumentException(parseError);
         }
 
+        if (!string.IsNullOrWhiteSpace(options.SettingsDirectory))
+        {
+            UserSettingsStore.UseDirectory(options.SettingsDirectory);
+        }
+
         // The runtime self-test loads bundled models and writes captures.
         // A normal launch must not enter it.
         if (options.SelfTest)
@@ -88,6 +93,8 @@ public partial class App : System.Windows.Application
         var motionLoop = false;
         double motionEndFrame = 0;
         var playbackWrapped = false;
+        JsonElement? armMotionDelta = null;
+        bool? armsMoved = null;
         var requireWrap = false;
         long loadMs = 0;
         var webview2Version = string.Empty;
@@ -214,7 +221,9 @@ public partial class App : System.Windows.Application
                 libraryMotions,
                 motionLoop,
                 motionEndFrame,
-                playbackWrapped);
+                playbackWrapped,
+                armMotionDelta,
+                armsMoved);
             try
             {
                 window?.Close();
@@ -231,6 +240,37 @@ public partial class App : System.Windows.Application
         }
 
         return passed;
+
+        async Task ReadArmMotionAsync(MainWindow smokeWindow)
+        {
+            try
+            {
+                var reading = await smokeWindow.ReadArmMotionAsync();
+                if (reading is not JsonElement element || element.ValueKind != JsonValueKind.Object)
+                {
+                    return;
+                }
+
+                if (element.TryGetProperty("armMotionDelta", out var delta) && delta.ValueKind == JsonValueKind.Object)
+                {
+                    armMotionDelta = delta.Clone();
+                }
+
+                if (element.TryGetProperty("armsMoved", out var moved))
+                {
+                    armsMoved = moved.ValueKind switch
+                    {
+                        JsonValueKind.True => true,
+                        JsonValueKind.False => false,
+                        _ => null,
+                    };
+                }
+            }
+            catch (Exception exception)
+            {
+                errors.Add("arm motion: " + exception.GetBaseException().Message);
+            }
+        }
 
         async Task RunBodyAsync(MainWindow smokeWindow)
         {
@@ -285,7 +325,8 @@ public partial class App : System.Windows.Application
                         }
 
                         previous = value;
-                        if (playbackAdvanced && (!requireWrap || playbackWrapped))
+                        await ReadArmMotionAsync(smokeWindow);
+                        if (playbackAdvanced && (!requireWrap || playbackWrapped) && armsMoved != false)
                         {
                             break;
                         }
@@ -301,6 +342,11 @@ public partial class App : System.Windows.Application
                 else if (requireWrap && !playbackWrapped)
                 {
                     errors.Add("Motion playback did not wrap after the end frame.");
+                }
+
+                if (armsMoved == false)
+                {
+                    errors.Add("The upper-arm and elbow bones stayed near the bind pose.");
                 }
             }
             else
@@ -348,7 +394,9 @@ public partial class App : System.Windows.Application
         int libraryMotions = 0,
         bool motionLoop = false,
         double motionEndFrame = 0,
-        bool playbackWrapped = false)
+        bool playbackWrapped = false,
+        JsonElement? armMotionDelta = null,
+        bool? armsMoved = null)
     {
         var payload = new
         {
@@ -358,6 +406,8 @@ public partial class App : System.Windows.Application
             motionLoop,
             motionEndFrame,
             playbackWrapped,
+            armMotionDelta,
+            armsMoved,
             loadMs,
             errors,
             webview2Version,

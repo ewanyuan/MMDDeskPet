@@ -770,6 +770,21 @@ public partial class MainWindow : Window
             : null;
     }
 
+    internal async Task<JsonElement?> ReadArmMotionAsync()
+    {
+        var core = Browser.CoreWebView2
+            ?? throw new InvalidOperationException("WebView2 is not initialized.");
+        var raw = await core.ExecuteScriptAsync(
+            "(() => { const runtime = window.MmdDeskPetRuntime; if (!runtime || typeof runtime.armMotion !== 'function') return null; return runtime.armMotion(); })()");
+        if (string.IsNullOrWhiteSpace(raw) || raw == "null")
+        {
+            return null;
+        }
+
+        using var document = JsonDocument.Parse(raw);
+        return document.RootElement.Clone();
+    }
+
     public async Task PlayAsync()
     {
         PostCommand(new { type = "play" });

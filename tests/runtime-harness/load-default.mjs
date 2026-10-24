@@ -164,6 +164,7 @@ try {
   if (motion.type !== "motion-loaded") {
     throw new Error(`motion failed: ${JSON.stringify(motion).slice(0, 1500)}`);
   }
+  const armAfterLoad = await page.evaluate(() => window.MmdDeskPetRuntime.armMotion());
   await page.evaluate((payload) => window.__hostSend(payload), { type: "play" });
   let first = null;
   let last = null;
@@ -183,6 +184,27 @@ try {
     }
     await page.waitForTimeout(100);
   }
+  await page.evaluate((payload) => window.__hostSend(payload), { type: "pause" });
+  const sampleFrames = [0, 30, 60, 90, 120, 180, 240].filter((frame) => frame <= motion.endFrame);
+  for (const frame of sampleFrames) {
+    await page.evaluate(async (frame) => {
+      await window.MmdDeskPetRuntime.runtime.seekAnimation(frame, true);
+      window.MmdDeskPetRuntime.scene.render();
+    }, frame);
+  }
+  const armMotion = await page.evaluate(() => window.MmdDeskPetRuntime.armMotion());
+  const shotDirectory = new URL("./output/", import.meta.url).pathname;
+  fs.mkdirSync(shotDirectory, { recursive: true });
+  await page.evaluate(async () => {
+    await window.MmdDeskPetRuntime.runtime.seekAnimation(0, true);
+    window.MmdDeskPetRuntime.scene.render();
+  });
+  await page.screenshot({ path: new URL("./output/uka-groove-a.png", import.meta.url).pathname });
+  await page.evaluate(async () => {
+    await window.MmdDeskPetRuntime.runtime.seekAnimation(90, true);
+    window.MmdDeskPetRuntime.scene.render();
+  });
+  await page.screenshot({ path: new URL("./output/uka-groove-b.png", import.meta.url).pathname });
   const missing = hits.filter((hit) => hit.status === 404);
   const advanced = typeof first === "number" && typeof last === "number" && (last - first >= 2 || last >= 3);
   const report = {
@@ -193,12 +215,15 @@ try {
     endFrame: motion.endFrame,
     loop: motion.loop,
     frames: [first, last],
+    armAfterLoad,
+    armMotionDelta: armMotion.armMotionDelta,
+    armsMoved: armMotion.armsMoved,
     advanced,
     missing,
     consoleNotes: consoleNotes.slice(0, 20),
   };
   console.log(JSON.stringify(report, null, 2));
-  if (!advanced || missing.length > 0 || motion.loop !== true || !(Number(motion.boneTracks) > 0)) {
+  if (!advanced || missing.length > 0 || motion.loop !== true || !(Number(motion.boneTracks) > 0) || armMotion.armsMoved !== true) {
     failed = true;
   }
 } catch (error) {

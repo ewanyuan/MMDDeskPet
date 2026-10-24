@@ -18,6 +18,8 @@ internal sealed class LaunchOptions
 
     internal bool ExpressionAudit { get; private set; }
 
+    internal string? SettingsDirectory { get; private set; }
+
     internal static bool TryParse(IReadOnlyList<string> args, out LaunchOptions options, out string? error)
     {
         options = new LaunchOptions();
@@ -42,6 +44,15 @@ internal sealed class LaunchOptions
                 }
 
                 options.MotionPath = value;
+            }
+            else if (HasName(argument, "--settings-dir"))
+            {
+                if (!TryTakeValue(args, argument, "--settings-dir", ref index, out var value, out error))
+                {
+                    return false;
+                }
+
+                options.SettingsDirectory = value;
             }
             else if (HasName(argument, "--library"))
             {
