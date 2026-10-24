@@ -62,11 +62,6 @@ mmd-expression-audit.json
 mmd-runtime-*
 zhixing-feedback-*.md
 
-# The win-x64 arm-fix package for this branch. Other zips stay ignored.
-!test-build/
-!test-build/MMDDeskPet-win-x64-test-arms.zip
-!test-build/MMDDeskPet-win-x64-test-arms.zip.sha256
-
 # Local tool state
 *.user
 *.suo

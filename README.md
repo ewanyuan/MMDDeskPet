@@ -12,7 +12,7 @@ Demo model: 公式MMDモデル 雛乃木まや (©雛乃木まや/KAZUYA/金子�
 
 ## 快速开始 | Quick start | クイックスタート
 
-1. 下载 [v0.1.1](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip) 并双击 `MMDDeskPet.exe`。 Download [v0.1.1](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip) and double-click `MMDDeskPet.exe`. [v0.1.1](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip) をダウンロードして `MMDDeskPet.exe` をダブルクリックする。
+1. 下载 [v0.1.2](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip) 并双击 `MMDDeskPet.exe`。 Download [v0.1.2](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip) and double-click `MMDDeskPet.exe`. [v0.1.2](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip) をダウンロードして `MMDDeskPet.exe` をダブルクリックする。
 2. 把模型放进 models 文件夹，或直接拖进窗口。 Put the model in the models folder, or drop it into the window. モデルを models フォルダに入れるか、ウィンドウにドロップする。
 3. 动作放进 motions 文件夹，或把 `.vmd` 拖进窗口。 Put a motion in the motions folder, or drop a `.vmd` into the window. モーションは motions フォルダに入れるか、`.vmd` をウィンドウにドラッグする。
 
@@ -71,11 +71,11 @@ Rendering and MMD playback use these libraries:
 
 ## 版本 | Status | バージョン
 
-当前版本 v0.1.1。[下载](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip)
+当前版本 v0.1.2。[下载](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip)
 
-Current version: v0.1.1. [Download](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip)
+Current version: v0.1.2. [Download](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip)
 
-現在のバージョンは v0.1.1 です。[ダウンロード](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip)
+現在のバージョンは v0.1.2 です。[ダウンロード](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip)
 
 这是早期版本，已在作者自己的 Windows 电脑上测试。
 

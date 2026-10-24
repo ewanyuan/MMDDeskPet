@@ -633,6 +633,14 @@ public partial class App : System.Windows.Application
 
             await window.PlayAsync();
             await Task.Delay(700);
+            var armMotion = await window.ReadArmMotionAsync();
+            if (armMotion is not JsonElement arm
+                || !arm.TryGetProperty("armsMoved", out var armsMoved)
+                || armsMoved.ValueKind != JsonValueKind.True)
+            {
+                throw new InvalidDataException("The bundled groove did not move the arm and elbow bones.");
+            }
+
             var previewPath = Path.Combine(outputDirectory, "mmd-runtime-default.png");
             await window.CapturePreviewAsync(previewPath);
             ValidatePreview(previewPath, "default");
