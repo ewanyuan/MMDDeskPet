@@ -15,6 +15,7 @@
     <Compile Include="..\..\RuntimeRequestGate.cs" Link="RuntimeRequestGate.cs" />
     <Compile Include="..\..\RuntimeAssetUrls.cs" Link="RuntimeAssetUrls.cs" />
     <Compile Include="..\..\LaunchOptions.cs" Link="LaunchOptions.cs" />
+    <Compile Include="..\..\UserSettings.cs" Link="UserSettings.cs" />
     <Compile Include="..\..\ModelLibrary.cs" Link="ModelLibrary.cs" />
   </ItemGroup>
 </Project>

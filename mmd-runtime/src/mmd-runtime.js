@@ -76,7 +76,18 @@ const state = {
   blinkIndices: [],
   blinkTimer: null,
   musicUrl: "",
+  armBind: null,
+  armPeak: null,
 };
+
+const armBoneNames = {
+  leftArm: "左腕",
+  rightArm: "右腕",
+  leftElbow: "左ひじ",
+  rightElbow: "右ひじ",
+};
+const armMovedDegrees = 20;
+const elbowMovedDegrees = 25;
 
 const desktopBodyTonePresets = {
   brighter: new Color3(0.84, 0.74, 0.72),
@@ -206,8 +217,111 @@ function restartLoopIfNeeded() {
     });
 }
 
+function copyBoneWorldMatrix(bone) {
+  return bone ? Array.from(bone.worldMatrix) : null;
+}
+
+function readArmMatrices(model) {
+  if (!model) {
+    return null;
+  }
+
+  const byName = new Map(model.runtimeBones.map((bone) => [bone.name, bone]));
+  const matrices = {};
+  for (const [key, name] of Object.entries(armBoneNames)) {
+    matrices[key] = copyBoneWorldMatrix(byName.get(name));
+  }
+  return matrices;
+}
+
+function matrixLooksPlaced(matrix) {
+  if (!matrix || matrix.length < 16) {
+    return false;
+  }
+
+  const span = Math.abs(matrix[12]) + Math.abs(matrix[13]) + Math.abs(matrix[14]);
+  return Number.isFinite(span) && span > 0.01;
+}
+
+function rotationAngleDegrees(fromMatrix, toMatrix) {
+  if (!fromMatrix || !toMatrix) {
+    return null;
+  }
+
+  let trace = 0;
+  for (let column = 0; column < 3; column += 1) {
+    for (let row = 0; row < 3; row += 1) {
+      trace += toMatrix[column * 4 + row] * fromMatrix[column * 4 + row];
+    }
+  }
+
+  const cosine = Math.max(-1, Math.min(1, (trace - 1) / 2));
+  return (Math.acos(cosine) * 180) / Math.PI;
+}
+
+function captureArmBind() {
+  const matrices = readArmMatrices(state.model);
+  if (!matrices || !matrixLooksPlaced(matrices.leftArm) || !matrixLooksPlaced(matrices.rightArm)) {
+    state.armBind = null;
+    state.armPeak = null;
+    return;
+  }
+
+  state.armBind = matrices;
+  state.armPeak = { leftArm: 0, rightArm: 0, leftElbow: 0, rightElbow: 0 };
+}
+
+function updateArmPeak() {
+  if (!state.model) {
+    return;
+  }
+
+  if (!state.armBind) {
+    captureArmBind();
+    return;
+  }
+
+  const current = readArmMatrices(state.model);
+  for (const key of Object.keys(armBoneNames)) {
+    const angle = rotationAngleDegrees(state.armBind[key], current[key]);
+    if (angle === null || !state.armPeak) {
+      continue;
+    }
+
+    state.armPeak[key] = Math.max(state.armPeak[key], angle);
+  }
+}
+
+function roundDegrees(value) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(value * 10) / 10 : null;
+}
+
+function armMotionReport() {
+  updateArmPeak();
+  const peak = state.armPeak;
+  const bind = state.armBind;
+  if (!peak || !bind || !bind.leftArm || !bind.rightArm || !bind.leftElbow || !bind.rightElbow) {
+    return { armMotionDelta: null, armsMoved: null };
+  }
+
+  const armMotionDelta = {
+    leftArm: roundDegrees(peak.leftArm),
+    rightArm: roundDegrees(peak.rightArm),
+    leftElbow: roundDegrees(peak.leftElbow),
+    rightElbow: roundDegrees(peak.rightElbow),
+  };
+  const armsMoved = armMotionDelta.leftArm >= armMovedDegrees
+    && armMotionDelta.rightArm >= armMovedDegrees
+    && armMotionDelta.leftElbow >= elbowMovedDegrees
+    && armMotionDelta.rightElbow >= elbowMovedDegrees;
+  return { armMotionDelta, armsMoved };
+}
+
 function installAnimationLoopObserver() {
-  scene.onBeforeRenderObservable.add(restartLoopIfNeeded);
+  scene.onBeforeRenderObservable.add(() => {
+    restartLoopIfNeeded();
+    updateArmPeak();
+  });
 }
 
 function waitForAudioMetadata(player) {
@@ -565,6 +679,8 @@ function disposeCurrentModel() {
   state.secondaryPreloadPromise = null;
   state.secondaryPreloadIndex = -1;
   state.secondaryPreloadUrl = "";
+  state.armBind = null;
+  state.armPeak = null;
 }
 
 function describeMorphs(metadata) {
@@ -682,6 +798,8 @@ async function loadCharacter(index, url, requestId) {
     return;
   }
 
+  scene.render();
+  captureArmBind();
   post("model-loaded", { ...describeLoadedCharacter(loaded), requestId });
 }
 
@@ -708,7 +826,11 @@ async function loadMotion(name, url, loop = false, requestId) {
   state.motionHandle = state.model.createRuntimeAnimation(motion);
   state.model.setRuntimeAnimation(state.motionHandle);
   runtime.setManualAnimationDuration(motion.endFrame);
+  if (state.armPeak) {
+    state.armPeak = { leftArm: 0, rightArm: 0, leftElbow: 0, rightElbow: 0 };
+  }
   await runtime.seekAnimation(0, true);
+  updateArmPeak();
   if (!isCurrentLoad(serial)) {
     return;
   }
@@ -1397,6 +1519,7 @@ window.MmdDeskPetRuntime = {
   loadCharacter,
   loadMotion,
   resetMorphs,
+  armMotion: armMotionReport,
 };
 
 initializeMmdRuntime().catch((error) => {

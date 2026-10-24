@@ -32,10 +32,21 @@ internal static class UserSettingsStore
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    private static string? _directoryOverride;
+
+    internal static void UseDirectory(string? directory)
+    {
+        _directoryOverride = string.IsNullOrWhiteSpace(directory)
+            ? null
+            : Path.GetFullPath(directory);
+    }
+
     internal static string SettingsFilePath =>
         Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "MMDDeskPet",
+            _directoryOverride
+                ?? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "MMDDeskPet"),
             "settings.json");
 
     internal static UserSettings Load()

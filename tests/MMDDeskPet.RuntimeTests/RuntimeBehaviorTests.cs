@@ -235,6 +235,47 @@ public class RuntimeBehaviorTests
         Assert.Equal(@"E:\motions", libraryEquals.LibraryFolder);
         Assert.False(LaunchOptions.TryParse(["--smoke-test", "--library"], out _, out var missingLibrary));
         Assert.Contains("--library", missingLibrary, StringComparison.Ordinal);
+
+        Assert.True(LaunchOptions.TryParse(
+            ["--settings-dir", @"D:\pet tests\isolated", "--smoke-test", "--model", @"C:\m.pmx"],
+            out var settingsOptions,
+            out var settingsError));
+        Assert.Null(settingsError);
+        Assert.Equal(@"D:\pet tests\isolated", settingsOptions.SettingsDirectory);
+        Assert.True(LaunchOptions.TryParse([@"--settings-dir=E:\isolated"], out var settingsEquals, out _));
+        Assert.Equal(@"E:\isolated", settingsEquals.SettingsDirectory);
+        Assert.False(LaunchOptions.TryParse(["--settings-dir"], out _, out var missingSettings));
+        Assert.Contains("--settings-dir", missingSettings, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsDirectoryDoesNotUseTheUserProfile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "mmd-settings-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            UserSettingsStore.UseDirectory(directory);
+            var settings = new UserSettings { LibraryFolder = "isolated-library" };
+            UserSettingsStore.Save(settings);
+            var loaded = UserSettingsStore.Load();
+            Assert.Equal("isolated-library", loaded.LibraryFolder);
+            Assert.StartsWith(directory, UserSettingsStore.SettingsFilePath, StringComparison.OrdinalIgnoreCase);
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            if (!string.IsNullOrWhiteSpace(appData))
+            {
+                Assert.False(
+                    UserSettingsStore.SettingsFilePath.StartsWith(appData, StringComparison.OrdinalIgnoreCase),
+                    UserSettingsStore.SettingsFilePath);
+            }
+        }
+        finally
+        {
+            UserSettingsStore.UseDirectory(null);
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
     }
 
     [Fact]

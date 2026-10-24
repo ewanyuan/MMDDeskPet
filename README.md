@@ -12,7 +12,7 @@ Demo model: 公式MMDモデル 雛乃木まや (©雛乃木まや/KAZUYA/金子�
 
 ## 快速开始 | Quick start | クイックスタート
 
-1. 下载 [v0.1.1](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip) 并双击 `MMDDeskPet.exe`。 Download [v0.1.1](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip) and double-click `MMDDeskPet.exe`. [v0.1.1](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip) をダウンロードして `MMDDeskPet.exe` をダブルクリックする。
+1. 下载 [v0.1.2](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip) 并双击 `MMDDeskPet.exe`。 Download [v0.1.2](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip) and double-click `MMDDeskPet.exe`. [v0.1.2](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip) をダウンロードして `MMDDeskPet.exe` をダブルクリックする。
 2. 把模型放进 models 文件夹，或直接拖进窗口。 Put the model in the models folder, or drop it into the window. モデルを models フォルダに入れるか、ウィンドウにドロップする。
 3. 动作放进 motions 文件夹，或把 `.vmd` 拖进窗口。 Put a motion in the motions folder, or drop a `.vmd` into the window. モーションは motions フォルダに入れるか、`.vmd` をウィンドウにドラッグする。
 
@@ -71,11 +71,11 @@ Rendering and MMD playback use these libraries:
 
 ## 版本 | Status | バージョン
 
-当前版本 v0.1.1。[下载](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip)
+当前版本 v0.1.2。[下载](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip)
 
-Current version: v0.1.1. [Download](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip)
+Current version: v0.1.2. [Download](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip)
 
-現在のバージョンは v0.1.1 です。[ダウンロード](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.1/MMDDeskPet-v0.1.1-win-x64.zip)
+現在のバージョンは v0.1.2 です。[ダウンロード](https://github.com/ewanyuan/MMDDeskPet/releases/download/v0.1.2/MMDDeskPet-v0.1.2-win-x64.zip)
 
 这是早期版本，已在作者自己的 Windows 电脑上测试。
 
@@ -128,11 +128,11 @@ pnpm --dir .\mmd-runtime install
 powershell -ExecutionPolicy Bypass -File .\tools\package-portable.ps1
 ```
 
-便携包写在 `dist/portable`。里面有空的 `models`、`motions`、`music` 文件夹，不会复制本机的模型或动作，但会带上 `assets/default` 里的 Uka 和默认舞蹈。把你自己的 PMX 放进 `models`（每个模型可以单独放在子文件夹里，并带上贴图），或直接拖进窗口。右键菜单会列出找到的模型和动作，另外有一项「默认角色 Uka」。`settings.json` 里的 `libraryFolder` 可以改库的位置，默认是 exe 所在的文件夹。库里没有模型、也没有上次打开的模型时，会自动加载 Uka 并循环播放默认舞蹈。
+便携包写在 `dist/portable`。里面有空的 `models`、`motions`、`music` 文件夹，不会复制本机的模型或动作，但会带上 `assets/default` 里的 Uka 和默认舞蹈。把你自己的 PMX 放进 `models`（每个模型可以单独放在子文件夹里，并带上贴图），或直接拖进窗口。右键菜单会列出找到的模型和动作，另外有一项「默认角色 Uka」。`settings.json` 里的 `libraryFolder` 可以改库的位置，默认是 exe 所在的文件夹。库里没有模型、也没有上次打开的模型时，会自动加载 Uka 并循环播放默认舞蹈。`--settings-dir <目录>` 把 `settings.json` 写到这个目录，而不是 `%APPDATA%\MMDDeskPet\settings.json`。测试时请带上它，这样不会改到本机的桌宠设置。
 
-The portable package is written to `dist/portable`. It includes empty `models`, `motions`, and `music` folders and does not copy models or motions from the machine, and it does include Uka and the default dance from `assets/default`. Put your own PMX in `models` (each model may sit in its own subfolder with its textures), or drop it on the window. The right-click menu lists the models and motions it finds, plus one entry, “Default character Uka”. `libraryFolder` in `settings.json` can point the library somewhere else; the default is the folder that contains the exe. With no library model and no last-opened model, it loads Uka and loops the default dance.
+The portable package is written to `dist/portable`. It includes empty `models`, `motions`, and `music` folders and does not copy models or motions from the machine, and it does include Uka and the default dance from `assets/default`. Put your own PMX in `models` (each model may sit in its own subfolder with its textures), or drop it on the window. The right-click menu lists the models and motions it finds, plus one entry, “Default character Uka”. `libraryFolder` in `settings.json` can point the library somewhere else; the default is the folder that contains the exe. With no library model and no last-opened model, it loads Uka and loops the default dance. `--settings-dir <directory>` writes `settings.json` in that folder instead of `%APPDATA%\MMDDeskPet\settings.json`. Pass it from tests so they do not change the desktop pet settings on the machine.
 
-ポータブル版は `dist/portable` に出力されます。空の `models`、`motions`、`music` フォルダがあり、手元のモデルやモーションはコピーしませんが、`assets/default` の Uka と既定ダンスは含まれます。自分の PMX は `models` に置くか（モデルごとにサブフォルダへテクスチャと一緒に置けます）、ウィンドウへドロップします。右クリックメニューに見つかったモデルとモーションが出て、加えて既定キャラクターの項目が一つあります。`settings.json` の `libraryFolder` で場所を変えられ、既定は exe のあるフォルダです。ライブラリにモデルが無く、前回のモデルも無いときは、Uka を読み込んで既定ダンスをループします。
+ポータブル版は `dist/portable` に出力されます。空の `models`、`motions`、`music` フォルダがあり、手元のモデルやモーションはコピーしませんが、`assets/default` の Uka と既定ダンスは含まれます。自分の PMX は `models` に置くか（モデルごとにサブフォルダへテクスチャと一緒に置けます）、ウィンドウへドロップします。右クリックメニューに見つかったモデルとモーションが出て、加えて既定キャラクターの項目が一つあります。`settings.json` の `libraryFolder` で場所を変えられ、既定は exe のあるフォルダです。ライブラリにモデルが無く、前回のモデルも無いときは、Uka を読み込んで既定ダンスをループします。`--settings-dir <フォルダ>` を付けると `settings.json` はそのフォルダに書き込まれ、`%APPDATA%\MMDDeskPet\settings.json` は変更されません。テストではこれを指定し、手元の設定を上書きしないでください。
 
 觉得有用就点个 Star，遇到问题欢迎提 issue。
 
