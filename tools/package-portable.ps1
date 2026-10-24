@@ -1,13 +1,11 @@
 param(
-    [string]$OutputDirectory = "",
-    [switch]$IncludeLocalPrivateAssets
+    [string]$OutputDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $toolDirectory = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $projectDirectory = Split-Path -Parent $toolDirectory
-$repositoryDirectory = Split-Path -Parent $projectDirectory
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $projectDirectory "dist/portable"
 }
@@ -50,44 +48,22 @@ if ($LASTEXITCODE -ne 0) {
     throw "The self-contained desktop pet publish failed."
 }
 
-$packageAssetsDirectory = Join-Path $OutputDirectory "assets"
-$creditsSource = Join-Path $projectDirectory "assets/motions/MOTION-CREDITS.md"
-$creditsDestination = Join-Path $packageAssetsDirectory "motions/MOTION-CREDITS.md"
-New-Item -ItemType Directory -Path (Split-Path -Parent $creditsDestination) -Force | Out-Null
-Copy-Item -LiteralPath $creditsSource -Destination $creditsDestination -Force
-
-# Default packaging copies no PMX, VMD, music, or textures.
-# -IncludeLocalPrivateAssets is opt-in and reads a local private model folder
-# that is not part of this repository.
-if ($IncludeLocalPrivateAssets) {
-    $modelsSource = Join-Path $repositoryDirectory "HimeMikotoDesktop/assets/Hime_&_Mikoto"
-    $modelsDestination = Join-Path $packageAssetsDirectory "Hime_&_Mikoto"
-    if (-not (Test-Path -LiteralPath $modelsSource)) {
-        throw "The local model directory was not found: $modelsSource"
-    }
-    Copy-Item -LiteralPath $modelsSource -Destination $modelsDestination -Recurse -Force
-
-    $motionsSource = Join-Path $projectDirectory "assets/motions"
-    $motionsDestination = Join-Path $packageAssetsDirectory "motions"
-    New-Item -ItemType Directory -Path $motionsDestination -Force | Out-Null
-    Get-ChildItem -LiteralPath $motionsSource -Force | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $motionsDestination $_.Name) -Recurse -Force
-    }
-
-    $musicSource = Join-Path $projectDirectory "assets/music"
-    if (Test-Path -LiteralPath $musicSource) {
-        Copy-Item -LiteralPath $musicSource -Destination (Join-Path $packageAssetsDirectory "music") -Recurse -Force
-    }
+$publishedAssets = Join-Path $OutputDirectory "assets"
+if (Test-Path -LiteralPath $publishedAssets) {
+    Remove-Item -LiteralPath $publishedAssets -Recurse -Force
 }
 
-if (-not $IncludeLocalPrivateAssets) {
-    $forbidden = Get-ChildItem -LiteralPath $OutputDirectory -Recurse -File |
-        Where-Object { $_.Extension.ToLowerInvariant() -in @(".pmx", ".pmd", ".vmd", ".vpd", ".tga", ".dds", ".spa", ".sph", ".bmp") }
-    if ($forbidden) {
-        $names = $forbidden | ForEach-Object { $_.FullName }
-        throw "Refusing to pack third-party model, motion, or texture files without -IncludeLocalPrivateAssets:`n$($names -join "`n")"
-    }
+$defaultSource = Join-Path $projectDirectory "assets/default"
+if (-not (Test-Path -LiteralPath $defaultSource)) {
+    throw "The bundled default assets were not found: $defaultSource"
 }
+Copy-Item -LiteralPath $defaultSource -Destination (Join-Path $OutputDirectory "assets/default") -Recurse -Force
+
+$licenseSource = Join-Path $projectDirectory "LICENSE"
+if (-not (Test-Path -LiteralPath $licenseSource)) {
+    throw "The repository LICENSE was not found: $licenseSource"
+}
+Copy-Item -LiteralPath $licenseSource -Destination (Join-Path $OutputDirectory "LICENSE") -Force
 
 $packageReadme = @"
 MMD Desk Pet
@@ -101,8 +77,8 @@ This is a portable build: keep the whole folder together.
 如果程序提示缺少 WebView2，请安装 Microsoft Edge WebView2 Runtime 后重试。
 If the app reports that WebView2 is missing, install the Microsoft Edge WebView2 Runtime and try again.
 
-默认包不含模型、动作和音乐。把 PMX 放进 models 文件夹（每个模型可以单独放在子文件夹里，并带上贴图），或拖进窗口。动作放进 motions，音乐放进 music。右键菜单里的「模型」「动作」会列出扫描结果。
-The default package does not include models, motions, or music. Put a PMX in the models folder (each model may sit in its own subfolder with its textures), or drop it onto the window. Put motions in motions and audio in music. The Models and Motions items in the right-click menu list what was scanned.
+安装后若 models 文件夹是空的，会自动加载随包的 Uka 和默认舞蹈并循环播放。右键菜单有一项「默认角色 Uka」。把自己的 PMX 放进 models 文件夹（每个模型可以单独放在子文件夹里，并带上贴图），或拖进窗口。动作放进 motions，音乐放进 music。右键菜单里的「模型」「动作」会列出扫描结果。assets/default 里的素材不使用 GPL，许可写在各自的 LICENSE.txt。
+If the models folder is empty after install, the bundled Uka model and default dance load automatically and loop. The right-click menu has one entry, Default character Uka. Put your own PMX in the models folder (each model may sit in its own subfolder with its textures), or drop it onto the window. Put motions in motions and audio in music. The Models and Motions items in the right-click menu list what was scanned. Files in assets/default are not under the GPL; their licenses are in LICENSE.txt.
 
 无人值守检查（不需要拖文件，跑完会自己退出，不会弹窗）：
 MMDDeskPet.exe --model "C:\path\model.pmx" --motion "C:\path\motion.vmd" --smoke-test --exit-after 90
@@ -145,6 +121,34 @@ foreach ($libraryFolder in @(
     $directory = Join-Path $OutputDirectory $libraryFolder.Name
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $directory "README.txt") -Value $libraryFolder.Readme -Encoding utf8
+}
+
+$outputRoot = (Resolve-Path -LiteralPath $OutputDirectory).Path.TrimEnd('\', '/')
+$rejected = @()
+Get-ChildItem -LiteralPath $OutputDirectory -Recurse -File | ForEach-Object {
+    $relative = $_.FullName.Substring($outputRoot.Length).TrimStart('\', '/').Replace('\', '/')
+    $allowed = $false
+    if ($relative -in @("LICENSE", "使用说明.txt", "models/README.txt", "motions/README.txt", "music/README.txt")) {
+        $allowed = $true
+    } elseif ($relative.StartsWith("web/") -or $relative.StartsWith("assets/default/")) {
+        $allowed = $true
+    } elseif ($relative -notmatch "/") {
+        $extension = $_.Extension.ToLowerInvariant()
+        if ($extension -in @(".exe", ".dll", ".json", ".xml", ".config")) {
+            $allowed = $true
+        }
+    } elseif ($relative -match '^[a-z]{2}(-[A-Za-z]+)?/[^/]+\.resources\.dll$') {
+        $allowed = $true
+    } elseif ($relative -match '^runtimes/[^/]+/native/[^/]+\.dll$') {
+        $allowed = $true
+    }
+
+    if (-not $allowed) {
+        $rejected += $relative
+    }
+}
+if ($rejected.Count -gt 0) {
+    throw "The package contains files outside the public allowlist:`n$($rejected -join "`n")"
 }
 
 $zipPath = "$OutputDirectory.zip"

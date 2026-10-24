@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private readonly UserSettings _settings;
     private readonly ContextMenu _petMenu = new();
     private readonly MenuItem _openModelMenu = new();
+    private readonly MenuItem _bundledDefaultMenu = new();
     private readonly MenuItem _openMotionMenu = new();
     private readonly MenuItem _openMusicMenu = new();
     private readonly MenuItem _recentModelsMenu = new();
@@ -55,16 +56,13 @@ public partial class MainWindow : Window
     private readonly MenuItem _builtInDanceMenu = new();
     private readonly MenuItem _customMotionMenu = new();
     private readonly MenuItem _noDanceMenu = new();
-    private readonly MenuItem _adultContentToggle = new();
     private readonly MenuItem _pauseDanceMenu = new();
     private readonly MenuItem _loopMotionMenu = new();
     private readonly MenuItem _appearanceMenu = new();
     private readonly MenuItem _skinToneMenu = new();
-    private readonly MenuItem _nakedMenu = new();
     private readonly MenuItem _eyeExpressionMenu = new();
     private readonly MenuItem _mouthExpressionMenu = new();
     private readonly MenuItem _clothingMenu = new();
-    private readonly MenuItem _adultMenu = new();
     private readonly MenuItem _allMorphsMenu = new();
     private readonly MenuItem _resetMorphsMenu = new();
     private readonly MenuItem _alwaysOnTopMenu = new();
@@ -164,26 +162,8 @@ public partial class MainWindow : Window
             ["x_Choker"] = "项圈",
             ["x_Skirt"] = "裙子",
             ["x_TankTop"] = "背心",
-            ["TTop_Slip"] = "胸口衣物下滑",
             ["x_Pants"] = "短裤",
-            ["TbTop_SlipUP"] = "胸口衣物上移",
-            ["TbTop_SlipDOWN"] = "胸口衣物下移",
             ["x_Tubetop"] = "抹胸",
-            ["x_T-Back"] = "丁字裤",
-            ["Blowjob"] = "口部形变",
-            ["NippleSize+"] = "乳头变大",
-            ["NippleStand"] = "乳头挺立",
-            ["NippleSize-"] = "乳头变小",
-            ["Boko"] = "腹部受击",
-            ["BokoInv"] = "腹部凹陷",
-            ["BokoLine"] = "腹部线条",
-            ["CliSize+"] = "阴蒂变大",
-            ["LabOpen_S"] = "阴唇打开（小）",
-            ["LabOpen_M"] = "阴唇打开（中）",
-            ["LabOpen_L"] = "阴唇打开（大）",
-            ["LabOpen_XL"] = "阴唇打开（特大）",
-            ["AnaOpen"] = "肛部打开",
-            ["AnaOpenEX"] = "肛部打开（异物）",
         };
     private readonly object _requestLock = new();
     private readonly RuntimeRequestGate _requests = new();
@@ -199,12 +179,8 @@ public partial class MainWindow : Window
     private bool _navigationStarted;
     private bool _closing;
     private bool _dualMode;
-    private bool _fullNudeActive;
-    private bool _adultContentEnabled;
     private bool _modelLoaded;
     private bool _usingCustomModel;
-    private bool _modelHasNakedMorph;
-    private bool _modelHasAdultMorphs;
     private bool _modelHasClothingMorphs;
     private string? _activeModelPath;
     private string? _customMotionPath;
@@ -221,189 +197,10 @@ public partial class MainWindow : Window
         _autoLoad = autoLoad;
         _launch = launch ?? new LaunchOptions();
         _repositoryRoot = FindRepositoryRoot();
-        _modelPaths =
-        [
-            ResolveModelPath(
-                "Hime_260426",
-                "Hime.physics-stable.pmx"),
-            ResolveModelPath(
-                "Mikoto_260303",
-                "Mikoto.physics-stable.pmx"),
-        ];
-        _danceMotions =
-        [
-            new(
-                "snow-halation",
-                "大好きなSnow halation",
-                "Daisuki na Snow halation",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "snow-halation-natsuki",
-                    "nac_snow_halation",
-                    "nac_snow_halation.vmd"),
-                UsageNote: "用户指定来源：ss46474765；沿用本机已核验的 Snow halation VMD。"),
-            new(
-                "sparkle-dual",
-                "アニサマ2022「Sparkle」",
-                "Animelo Summer Live 2022 \"Sparkle\"",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "sparkle-dual",
-                    "sparkle-left.vmd"),
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "sparkle-dual",
-                    "sparkle-right.vmd"),
-                UsageNote: "用户指定来源：ss46421758；BowlRoll 284475，动作作者：松山じろべえ。左位模型使用左位动作，右位模型使用右位动作；允许修改，但禁止未经许可再分发和商业使用。"),
-            new(
-                "helltaker",
-                "Helltaker（循环舞）",
-                "Helltaker (loop dance)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "helltaker",
-                    "Helltaker_like_dance_1min_1.vmd")),
-            new(
-                "telepathy",
-                "Telepathy（上半身）",
-                "Telepathy (upper body)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "telepathy",
-                    "P_Telepathy_motion_",
-                    "Telepathy1235.vmd")),
-            new(
-                "beyond-the-way",
-                "Beyond the way（力量感）",
-                "Beyond the way (energetic)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "beyond-the-way",
-                    "P_BeyondTW_Motion",
-                    "BeyoudTW_motion.vmd")),
-            new(
-                "tokyo-shandy-rendezvous",
-                "东京・香迪・兰德弗（风格化）",
-                "Tokyo Shandy Rendezvous (stylized)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "tokyo-shandy-rendezvous",
-                    "P_TokyoSR_モーション配布",
-                    "TokyoSR_motion.vmd")),
-            new(
-                "queen",
-                "QUEEN（酷帅）",
-                "QUEEN (sharp)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "queen",
-                    "QUEEN_miku.vmd")),
-            new(
-                "womanizer-dual",
-                "Womanizer（双人・魅惑）",
-                "Womanizer (dual, sensual)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "womanizer",
-                    "womanizer-left.vmd"),
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "womanizer",
-                    "womanizer-right.vmd")),
-            new(
-                "erotic-hip-duo",
-                "Erotic Hip-Shaking Duo（双人）",
-                "Erotic Hip-Shaking Duo (dual)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "erotic-hip-duo",
-                    "EroHipDuoDance_Model-L_Motion.vmd"),
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "erotic-hip-duo",
-                    "EroHipDuoDance_Model-R_Motion.vmd"),
-                UsageNote: "动作作者 CraftieMMD；允许修改和 R18 使用，但禁止未经许可再分发动作数据。本机版本先只加载双人身体动作，不自动加载面部、镜头或持杆附加动作。",
-                StartFrame: 330),
-            new(
-                "waist-dance",
-                "腰振り舞（诱惑）",
-                "Waist dance (sensual)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "waist-dance",
-                    "waist-dance-loop.vmd"),
-                Loop: true),
-            new(
-                "rust-veins",
-                "Rust Veins 腰振舞",
-                "Rust Veins hip-sway dance",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "rust-veins",
-                    "motion 1.vmd"),
-                UsageNote: "动作作者 TottyMMD（totozoMMD）；仅作本机使用，使用前请保留随包 readme.txt 并自行确认发布范围。"),
-            new(
-                "tsuyoi",
-                "つよっ！（单人）",
-                "Tsuyoi! (solo)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "requested",
-                    "tsuyoi",
-                    "tsuyoi.vmd"),
-                UsageNote: "非商业使用；禁止 R18、再分发或转交动作文件。"),
-            new(
-                "inmu-king",
-                "INMU KING（动作待补）",
-                "INMU KING (motion pending)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "requested",
-                    "inmu-king",
-                    "INMU-KING.vmd"),
-                UnavailableNote: "原视频未公开可核验的 VMD 动作文件，暂不伪造动作。"),
-            new(
-                "tick-trick",
-                "Tick-Trick（Rick式）",
-                "Tick-Trick (Rick)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "requested",
-                    "tick-trick",
-                    "Tick-Trick.vmd"),
-                UsageNote: "非商业、非 R15；禁止再分发，且需保留乐曲作者前線的署名。"),
-            new(
-                "oppai-fukkireta",
-                "Oppai Fukkireta（授权待定）",
-                "Oppai Fukkireta (license pending)",
-                Path.Combine(
-                    "assets",
-                    "motions",
-                    "requested",
-                    "oppai-fukkireta",
-                    "Oppai-Fukkireta.vmd"),
-                UnavailableNote: "原作者条款禁止将动作嵌入游戏，当前不能合法集成。"),
-        ];
+        _modelPaths = [];
+        _danceMotions = [];
         _english = !IsChineseSystemLanguage();
         _settings = UserSettingsStore.Load();
-        _adultContentEnabled = _settings.AdultContentEnabled;
         try
         {
             ModelLibraryScanner.EnsureFolders(CurrentLibraryRoot());
@@ -559,11 +356,16 @@ public partial class MainWindow : Window
 
                 if (!loaded)
                 {
+                    loaded = await TryLoadBundledDefaultAsync();
+                }
+
+                if (!loaded)
+                {
                     Trace("startup-plan:empty");
                 }
             }
 
-            if (!StartupModelPolicy.ShouldAutoLoadBundledModel && !loaded)
+            if (!loaded)
             {
                 ShowEmptyHint();
             }
@@ -777,7 +579,6 @@ public partial class MainWindow : Window
             supersedePreviousLoad: true);
         PopulateMorphMenus(message.GetProperty("primary"));
         MarkDualModelsLoaded(_modelPaths[primaryIndex], primaryIndex);
-        await ApplyFullNudeIfNeededAsync();
         return message;
     }
 
@@ -842,7 +643,6 @@ public partial class MainWindow : Window
             supersedePreviousLoad: true);
         PopulateMorphMenus(message.GetProperty("primary"));
         MarkDualModelsLoaded(primaryPath, primaryIndex);
-        await ApplyFullNudeIfNeededAsync();
         return message;
     }
 
@@ -1308,6 +1108,15 @@ public partial class MainWindow : Window
     private void BuildBaseContextMenu()
     {
         ConfigureOpenMenu(_openModelMenu, Text("打开模型…", "Open model…"), OnOpenModelMenuClick);
+        ConfigureOpenMenu(
+            _bundledDefaultMenu,
+            Text("默认角色 Uka", "Default character Uka"),
+            OnBundledDefaultMenuClick);
+        _bundledDefaultMenu.ToolTip =
+            "CG-CA Uka (c) 2023-2024 by Nagoya Institute of Technology, Moonshot R&D Goal 1 Avatar Symbiotic Society";
+        _bundledDefaultMenu.Visibility = BundledDefaultAvailable()
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         ConfigureOpenMenu(_openMotionMenu, Text("打开动作…", "Open motion…"), OnOpenMotionMenuClick);
         ConfigureOpenMenu(_openMusicMenu, Text("打开音乐…", "Open music…"), OnOpenMusicMenuClick);
         _libraryModelsMenu.Header = Text("模型", "Models");
@@ -1335,12 +1144,6 @@ public partial class MainWindow : Window
         _skinToneMenu.Visibility = Visibility.Collapsed;
         BuildSkinToneMenu();
 
-        _nakedMenu.Header = Text("全裸", "Full nude");
-        ConfigureMenuItem(_nakedMenu);
-        _nakedMenu.Visibility = Visibility.Collapsed;
-        _nakedMenu.StaysOpenOnClick = true;
-        _nakedMenu.Click += OnMorphMenuClick;
-
         _danceMenu.Header = Text("🎵 舞蹈", "🎵 Dance");
         ConfigureMenuItem(_danceMenu);
         BuildDanceMenu();
@@ -1363,22 +1166,12 @@ public partial class MainWindow : Window
         _eyeExpressionMenu.Header = Text("眼睛表情", "Eye expressions");
         _mouthExpressionMenu.Header = Text("嘴部表情", "Mouth expressions");
         _clothingMenu.Header = Text("服装与鞋袜", "Clothes and footwear");
-        _adultMenu.Header = Text("成人形变", "Adult morphs");
         _allMorphsMenu.Header = Text("全部形变", "All morphs");
         ConfigureMenuItem(_eyeExpressionMenu);
         ConfigureMenuItem(_mouthExpressionMenu);
         ConfigureMenuItem(_clothingMenu);
-        ConfigureMenuItem(_adultMenu);
         ConfigureMenuItem(_allMorphsMenu);
         _allMorphsMenu.Visibility = Visibility.Collapsed;
-
-        _adultContentToggle.Header = Text("显示成人与脱衣选项", "Show adult and outfit-removal options");
-        ConfigureMenuItem(_adultContentToggle);
-        _adultContentToggle.IsCheckable = true;
-        _adultContentToggle.IsChecked = _adultContentEnabled;
-        _adultContentToggle.StaysOpenOnClick = true;
-        _adultContentToggle.Visibility = Visibility.Collapsed;
-        _adultContentToggle.Click += OnAdultContentToggleClick;
 
         _resetMorphsMenu.Header = Text("恢复默认形变", "Reset morphs");
         ConfigureMenuItem(_resetMorphsMenu);
@@ -1391,10 +1184,7 @@ public partial class MainWindow : Window
         _appearanceMenu.Items.Add(_mouthExpressionMenu);
         _appearanceMenu.Items.Add(_allMorphsMenu);
         _appearanceMenu.Items.Add(new Separator());
-        _appearanceMenu.Items.Add(_adultContentToggle);
-        _appearanceMenu.Items.Add(_nakedMenu);
         _appearanceMenu.Items.Add(_clothingMenu);
-        _appearanceMenu.Items.Add(_adultMenu);
         _appearanceMenu.Items.Add(new Separator());
         _appearanceMenu.Items.Add(_resetMorphsMenu);
 
@@ -1410,6 +1200,7 @@ public partial class MainWindow : Window
         _closeMenu.Click += OnCloseMenuClick;
 
         _petMenu.Items.Add(_openModelMenu);
+        _petMenu.Items.Add(_bundledDefaultMenu);
         _petMenu.Items.Add(_libraryModelsMenu);
         _petMenu.Items.Add(_openMotionMenu);
         _petMenu.Items.Add(_libraryMotionsMenu);
@@ -1477,7 +1268,9 @@ public partial class MainWindow : Window
             var isAvailable = File.Exists(path)
                 && (secondaryPath is null || File.Exists(secondaryPath));
             if (dance.IsDual
-                && (!File.Exists(_modelPaths[0]) || !File.Exists(_modelPaths[1])))
+                && (_modelPaths.Length < 2
+                    || !File.Exists(_modelPaths[0])
+                    || !File.Exists(_modelPaths[1])))
             {
                 isAvailable = false;
             }
@@ -1588,21 +1381,15 @@ public partial class MainWindow : Window
     {
         _morphMenuItems.Clear();
         _activeMorphBySubmenu.Clear();
-        _nakedMenu.Tag = null;
-        _nakedMenu.Visibility = Visibility.Collapsed;
-        SetRadioIndicator(_nakedMenu, selected: false);
         ClearMenu(_eyeExpressionMenu);
         ClearMenu(_mouthExpressionMenu);
         ClearMenu(_clothingMenu);
-        ClearMenu(_adultMenu);
         ClearMenu(_allMorphsMenu);
 
         var eyeExpressions = new List<(int Index, string Name)>();
         var mouthExpressions = new List<(int Index, string Name)>();
         var clothing = new List<(int Index, string Name)>();
-        var adult = new List<(int Index, string Name)>();
         var allMorphs = new List<(int Index, string Name)>();
-        var inAdultSection = false;
 
         foreach (var morph in message.GetProperty("morphs").EnumerateArray())
         {
@@ -1615,21 +1402,11 @@ public partial class MainWindow : Window
 
             if (name.StartsWith("--", StringComparison.Ordinal))
             {
-                inAdultSection = name.Contains("r18", StringComparison.OrdinalIgnoreCase)
-                    || name.Contains("adult", StringComparison.OrdinalIgnoreCase)
-                    || name.Contains("成人", StringComparison.OrdinalIgnoreCase);
                 continue;
             }
 
             if (IsInternalMorph(name, englishName))
             {
-                continue;
-            }
-
-            if (IsFullNudeMorph(name, englishName))
-            {
-                _nakedMenu.Tag = index;
-                _morphMenuItems[index] = _nakedMenu;
                 continue;
             }
 
@@ -1645,24 +1422,10 @@ public partial class MainWindow : Window
                 continue;
             }
 
-            var isAdult = inAdultSection
-                || nameLower.Contains("r18", StringComparison.Ordinal)
-                || nameLower.Contains("adult", StringComparison.Ordinal)
-                || name.Contains("成人", StringComparison.Ordinal);
             var isClothing = ContainsAny(nameLower,
                 "服", "衣", "裙", "裤", "鞋", "袜", "靴", "裸足", "ストッキング", "ソックス", "パンツ",
-                "スカート", "チョーカー", "タンク", "胸はだけ", "スリップ", "チューブ", "t-バック", "tバック",
-                "水着", "下着", "cloth", "wear", "shoes", "stocking", "pants");
-
-            if (isAdult || IsUsefulAdultMorph(name, englishName, isClothing: false))
-            {
-                if (IsUsefulAdultMorph(name, englishName, isClothing))
-                {
-                    adult.Add((index, MorphHeader(name, englishName)));
-                }
-
-                continue;
-            }
+                "スカート", "チョーカー", "タンク", "スリップ", "チューブ",
+                "水着", "cloth", "wear", "shoes", "stocking", "pants");
 
             if (isClothing)
             {
@@ -1676,17 +1439,14 @@ public partial class MainWindow : Window
         AddMorphItems(_eyeExpressionMenu, eyeExpressions);
         AddMorphItems(_mouthExpressionMenu, mouthExpressions);
         AddMorphItems(_clothingMenu, clothing);
-        AddMorphItems(_adultMenu, adult);
         AddMorphItems(_allMorphsMenu, allMorphs);
 
         _eyeExpressionMenu.Visibility = eyeExpressions.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         _mouthExpressionMenu.Visibility = mouthExpressions.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         _allMorphsMenu.Visibility = allMorphs.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        _modelHasNakedMorph = _nakedMenu.Tag is int;
-        _modelHasAdultMorphs = adult.Count > 0;
         _modelHasClothingMorphs = clothing.Count > 0;
         UpdateSkinToneMenu(message);
-        ApplySensitiveMenuVisibility();
+        _clothingMenu.Visibility = _modelHasClothingMorphs ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void AddMorphItems(MenuItem parent, IEnumerable<(int Index, string Name)> morphs)
@@ -1718,7 +1478,6 @@ public partial class MainWindow : Window
         await ApplyMorphSelectionAsync(item, index);
     }
 
-    internal bool FullNudeActiveForTest => _fullNudeActive;
     internal int ActiveEyeExpressionCountForTest =>
         _activeMorphBySubmenu.ContainsKey(_eyeExpressionMenu) ? 1 : 0;
     internal int? ActiveEyeExpressionIndexForTest =>
@@ -1750,12 +1509,6 @@ public partial class MainWindow : Window
 
     private async Task ApplyMorphSelectionAsync(MenuItem item, int index)
     {
-        if (ReferenceEquals(item, _nakedMenu))
-        {
-            await ApplyFullNudeSelectionAsync(index);
-            return;
-        }
-
         var submenu = GetMorphSubmenu(item);
         if (submenu is null)
         {
@@ -1763,18 +1516,9 @@ public partial class MainWindow : Window
         }
 
         var hadPrevious = _activeMorphBySubmenu.TryGetValue(submenu, out var previousIndex);
-        var selectingClothing = ReferenceEquals(submenu, _clothingMenu);
-        var wasFullNudeActive = _fullNudeActive;
-        var nakedMorphIndex = _nakedMenu.Tag is int value ? value : -1;
 
         try
         {
-            if (selectingClothing && _fullNudeActive && nakedMorphIndex >= 0)
-            {
-                await SetMorphAsync(nakedMorphIndex, 0.0);
-                _fullNudeActive = false;
-            }
-
             if (hadPrevious && previousIndex != index)
             {
                 await SetMorphAsync(previousIndex, 0.0);
@@ -1786,61 +1530,11 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            _fullNudeActive = wasFullNudeActive;
             if (hadPrevious && previousIndex != index)
             {
                 try
                 {
                     await SetMorphAsync(previousIndex, 1.0);
-                }
-                catch
-                {
-                    // Keep the original runtime error as the user-facing failure.
-                }
-            }
-
-            if (selectingClothing && wasFullNudeActive && nakedMorphIndex >= 0)
-            {
-                try
-                {
-                    await SetMorphAsync(nakedMorphIndex, 1.0);
-                }
-                catch
-                {
-                    // Keep the original runtime error as the user-facing failure.
-                }
-            }
-
-            UpdateMorphRadioIndicators();
-            _lastRuntimeError = exception.ToString();
-        }
-    }
-
-    private async Task ApplyFullNudeSelectionAsync(int index)
-    {
-        var hadClothing = _activeMorphBySubmenu.TryGetValue(_clothingMenu, out var clothingIndex);
-        var wasFullNudeActive = _fullNudeActive;
-        try
-        {
-            if (hadClothing)
-            {
-                await SetMorphAsync(clothingIndex, 0.0);
-                _activeMorphBySubmenu.Remove(_clothingMenu);
-            }
-
-            await SetMorphAsync(index, 1.0);
-            _fullNudeActive = true;
-            UpdateMorphRadioIndicators();
-        }
-        catch (Exception exception)
-        {
-            _fullNudeActive = wasFullNudeActive;
-            if (hadClothing)
-            {
-                try
-                {
-                    await SetMorphAsync(clothingIndex, 1.0);
-                    _activeMorphBySubmenu[_clothingMenu] = clothingIndex;
                 }
                 catch
                 {
@@ -1868,11 +1562,6 @@ public partial class MainWindow : Window
         if (_clothingMenu.Items.Contains(item))
         {
             return _clothingMenu;
-        }
-
-        if (_adultMenu.Items.Contains(item))
-        {
-            return _adultMenu;
         }
 
         if (_allMorphsMenu.Items.Contains(item))
@@ -2021,6 +1710,11 @@ public partial class MainWindow : Window
     private async Task SwitchCharacterAsync()
     {
         if (!_danceMenu.IsEnabled)
+        {
+            return;
+        }
+
+        if (_modelPaths.Length == 0)
         {
             return;
         }
@@ -2254,60 +1948,9 @@ public partial class MainWindow : Window
         return url;
     }
 
-    private string ResolveModelPath(string modelDirectory, string fileName)
-    {
-        var candidates = new List<string>
-        {
-            Path.Combine(_repositoryRoot, "assets", "Hime_&_Mikoto", modelDirectory, fileName),
-            Path.Combine(_repositoryRoot, "HimeMikotoDesktop", "assets", "Hime_&_Mikoto", modelDirectory, fileName),
-        };
-        var parent = Directory.GetParent(_repositoryRoot);
-        if (parent is not null)
-        {
-            candidates.Add(Path.Combine(
-                parent.FullName,
-                "HimeMikotoDesktop",
-                "assets",
-                "Hime_&_Mikoto",
-                modelDirectory,
-                fileName));
-        }
-
-        foreach (var candidate in candidates)
-        {
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
-        return candidates[0];
-    }
-
     private string ResolveProjectPath(string relativePath)
     {
-        var sourceLayoutPath = Path.Combine(_repositoryRoot, relativePath);
-        if (File.Exists(sourceLayoutPath) || Directory.Exists(sourceLayoutPath))
-        {
-            return sourceLayoutPath;
-        }
-
-        const string nativeProjectPrefix = "HimeMikotoDesktopNative";
-        if (relativePath.Equals(nativeProjectPrefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return _repositoryRoot;
-        }
-
-        var portableRelativePath = relativePath.StartsWith(
-            nativeProjectPrefix + Path.DirectorySeparatorChar,
-            StringComparison.OrdinalIgnoreCase)
-            ? relativePath[(nativeProjectPrefix.Length + 1)..]
-            : relativePath.StartsWith(
-                nativeProjectPrefix + Path.AltDirectorySeparatorChar,
-                StringComparison.OrdinalIgnoreCase)
-                ? relativePath[(nativeProjectPrefix.Length + 1)..]
-                : relativePath;
-        return Path.Combine(_repositoryRoot, portableRelativePath);
+        return Path.Combine(_repositoryRoot, relativePath);
     }
 
     private string Text(string chinese, string english)
@@ -2320,17 +1963,6 @@ public partial class MainWindow : Window
         menu.Items.Clear();
     }
 
-    private async Task ApplyFullNudeIfNeededAsync()
-    {
-        if (!_fullNudeActive || _nakedMenu.Tag is not int nakedMorphIndex)
-        {
-            return;
-        }
-
-        await SetMorphAsync(nakedMorphIndex, 1.0);
-        SetRadioIndicator(_nakedMenu, selected: true);
-    }
-
     internal Task ClearMorphStateForTestAsync()
     {
         return ResetMorphStateAsync();
@@ -2338,7 +1970,6 @@ public partial class MainWindow : Window
 
     private async Task ResetMorphStateAsync()
     {
-        _fullNudeActive = false;
         _activeMorphBySubmenu.Clear();
         foreach (var item in _morphMenuItems.Values.Distinct())
         {
@@ -2358,11 +1989,6 @@ public partial class MainWindow : Window
 
     private bool IsActiveMorphItem(MenuItem item)
     {
-        if (ReferenceEquals(item, _nakedMenu))
-        {
-            return _fullNudeActive;
-        }
-
         if (item.Tag is not int index)
         {
             return false;
@@ -2533,42 +2159,6 @@ public partial class MainWindow : Window
         return name;
     }
 
-    private static bool IsFullNudeMorph(string name, string englishName)
-    {
-        return ContainsAny(
-            name.ToLowerInvariant(),
-            "全裸",
-            "naked",
-            "nude")
-            || ContainsAny(englishName.ToLowerInvariant(), "castoff", "naked", "nude");
-    }
-
-    private static bool IsUsefulAdultMorph(string name, string englishName, bool isClothing)
-    {
-        if (isClothing)
-        {
-            return true;
-        }
-
-        var combined = $"{name.ToLowerInvariant()} {englishName.ToLowerInvariant()}";
-        return ContainsAny(
-            combined,
-            "口淫",
-            "blowjob",
-            "乳首",
-            "nipple",
-            "腹ボコ",
-            "腹パン",
-            "腹ゴリ",
-            "boko",
-            "陰唇開",
-            "labopen",
-            "vagopen",
-            "ｱﾅﾙ開",
-            "アナル開",
-            "anaopen");
-    }
-
     private static bool IsChineseSystemLanguage()
     {
         try
@@ -2672,11 +2262,10 @@ public partial class MainWindow : Window
             RememberModel(path);
         }
 
-        await ApplyFullNudeIfNeededAsync();
         return message;
     }
 
-    internal async Task<JsonElement> LoadMotionFileAsync(string path, bool recordRecent = true)
+    internal async Task<JsonElement> LoadMotionFileAsync(string path, bool recordRecent = true, bool? loop = null)
     {
         if (!File.Exists(path))
         {
@@ -2712,7 +2301,7 @@ public partial class MainWindow : Window
         var motion = await LoadMotionAsync(
             Path.GetFileNameWithoutExtension(path),
             path,
-            loop: _settings.LoopMotion);
+            loop: loop ?? _settings.LoopMotion);
         if (motion.GetProperty("boneTracks").GetInt32() <= 0)
         {
             throw new InvalidDataException("The selected VMD contained no bone tracks.");
@@ -3065,6 +2654,91 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private string BundledModelPath()
+    {
+        return ResolveProjectPath(StartupModelPolicy.BundledModelRelativePath);
+    }
+
+    private string BundledMotionPath()
+    {
+        return ResolveProjectPath(StartupModelPolicy.BundledMotionRelativePath);
+    }
+
+    private bool BundledDefaultAvailable()
+    {
+        return File.Exists(BundledModelPath()) && File.Exists(BundledMotionPath());
+    }
+
+    private async Task<bool> TryLoadBundledDefaultAsync()
+    {
+        var modelPath = BundledModelPath();
+        var motionPath = BundledMotionPath();
+        var libraryCount = 0;
+        try
+        {
+            libraryCount = ModelLibraryScanner.Scan(CurrentLibraryRoot()).Models.Count;
+        }
+        catch (Exception exception)
+        {
+            Trace($"library-scan-failed:{exception.GetBaseException().Message}");
+        }
+
+        if (!StartupModelPolicy.ShouldLoadBundledDefault(
+                _settings.LastModelPath,
+                IsExistingFile,
+                libraryCount,
+                File.Exists(modelPath),
+                File.Exists(motionPath)))
+        {
+            return false;
+        }
+
+        Trace($"startup-plan:bundled-default:{modelPath}");
+        try
+        {
+            await LoadModelFileAsync(modelPath, recordRecent: false);
+        }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Trace($"startup-model-skipped:{exception.GetBaseException().Message}");
+            return false;
+        }
+
+        Trace($"startup-plan:bundled-motion:{motionPath}");
+        try
+        {
+            await LoadMotionFileAsync(motionPath, recordRecent: false, loop: true);
+        }
+        catch (Exception exception) when (IsSuperseded(exception))
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            Trace($"startup-motion-skipped:{exception.GetBaseException().Message}");
+        }
+
+        return true;
+    }
+
+    private async void OnBundledDefaultMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (!BundledDefaultAvailable())
+        {
+            return;
+        }
+
+        await RunUserFileAction(async () =>
+        {
+            await LoadModelFileAsync(BundledModelPath());
+            await LoadMotionFileAsync(BundledMotionPath(), loop: true);
+        });
+    }
+
     private void OnOpenLibraryFolderClick(object sender, RoutedEventArgs e)
     {
         try
@@ -3369,7 +3043,9 @@ public partial class MainWindow : Window
 
     private void UpdateSwitchCharacterMenu()
     {
-        var bothBundled = File.Exists(_modelPaths[0]) && File.Exists(_modelPaths[1]);
+        var bothBundled = _modelPaths.Length >= 2
+            && File.Exists(_modelPaths[0])
+            && File.Exists(_modelPaths[1]);
         var show = bothBundled && _modelLoaded && !_usingCustomModel;
         _switchCharacterMenu.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         _switchCharacterMenu.IsEnabled = show;
@@ -3408,59 +3084,6 @@ public partial class MainWindow : Window
         }
 
         _skinToneMenu.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private void ApplySensitiveMenuVisibility()
-    {
-        var hasSensitive = _modelHasNakedMorph || _modelHasAdultMorphs || _modelHasClothingMorphs;
-        _adultContentToggle.Visibility = hasSensitive ? Visibility.Visible : Visibility.Collapsed;
-        var show = _adultContentEnabled && hasSensitive;
-        _nakedMenu.Visibility = show && _modelHasNakedMorph ? Visibility.Visible : Visibility.Collapsed;
-        _clothingMenu.Visibility = show && _modelHasClothingMorphs ? Visibility.Visible : Visibility.Collapsed;
-        _adultMenu.Visibility = show && _modelHasAdultMorphs ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private async void OnAdultContentToggleClick(object? sender, RoutedEventArgs e)
-    {
-        _adultContentEnabled = _adultContentToggle.IsChecked == true;
-        _settings.AdultContentEnabled = _adultContentEnabled;
-        UserSettingsStore.Save(_settings);
-        ApplySensitiveMenuVisibility();
-        if (_adultContentEnabled || !_modelLoaded)
-        {
-            return;
-        }
-
-        try
-        {
-            await ClearSensitiveMorphsAsync();
-        }
-        catch (Exception exception)
-        {
-            _lastRuntimeError = exception.ToString();
-        }
-    }
-
-    private async Task ClearSensitiveMorphsAsync()
-    {
-        if (_fullNudeActive && _nakedMenu.Tag is int nakedIndex)
-        {
-            await SetMorphAsync(nakedIndex, 0);
-            _fullNudeActive = false;
-        }
-
-        foreach (var submenu in new[] { _clothingMenu, _adultMenu })
-        {
-            if (!_activeMorphBySubmenu.TryGetValue(submenu, out var index))
-            {
-                continue;
-            }
-
-            await SetMorphAsync(index, 0);
-            _activeMorphBySubmenu.Remove(submenu);
-        }
-
-        UpdateMorphRadioIndicators();
     }
 
     private void ShowInfo(string message)
@@ -3577,8 +3200,7 @@ public partial class MainWindow : Window
     private static bool IsSourceRoot(string directory)
     {
         return File.Exists(Path.Combine(directory, "web", "index.html"))
-            && (File.Exists(Path.Combine(directory, "MMDDeskPet.csproj"))
-                || File.Exists(Path.Combine(directory, "HimeMikotoDesktopNative.csproj")));
+            && File.Exists(Path.Combine(directory, "MMDDeskPet.csproj"));
     }
 
     private static bool IsPortableRoot(string directory)
@@ -3589,7 +3211,6 @@ public partial class MainWindow : Window
         }
 
         return File.Exists(Path.Combine(directory, "MMDDeskPet.exe"))
-            || File.Exists(Path.Combine(directory, "HimeMikotoDesktopNative.exe"))
             || File.Exists(Path.Combine(directory, "使用说明.txt"));
     }
 
